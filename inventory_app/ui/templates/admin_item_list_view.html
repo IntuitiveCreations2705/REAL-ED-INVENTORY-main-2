@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Item ID List</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='admin_theme.css') }}" />
+  </head>
+  <body>
+    <main class="app-shell item-list-shell">
+      <header class="card header">
+        <div>
+          <h1>Admin Item ID List</h1>
+          <p>Secondary editable table for item keys during development.</p>
+        </div>
+        <div class="header-actions">
+          <a class="btn secondary btn-link" href="{{ url_for('index') }}">Back to Master</a>
+          <button id="add-row-btn" class="btn">Add Row</button>
+          <button id="refresh-btn" class="btn secondary">Refresh</button>
+        </div>
+      </header>
+
+      <section class="card controls controls-item-list">
+        <div class="control">
+          <label for="search-q">Search item id / name</label>
+          <input id="search-q" type="text" placeholder="Type to filter" />
+        </div>
+        <div class="control small">
+          <label for="status-filter">Status</label>
+          <select id="status-filter">
+            <option value="all">All</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="card table-wrap item-list-wrap">
+        <table class="item-list-table">
+          <thead>
+            <tr>
+              <th>Item ID</th>
+              <th>Status</th>
+              <th>Item Name</th>
+              <th>Used In Master</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="rows-body"></tbody>
+        </table>
+      </section>
+
+      <footer id="status-bar" class="status-bar">Ready</footer>
+    </main>
+
+    <template id="row-template">
+      <tr>
+        <td><input data-field="item_id" type="text" class="mono" /></td>
+        <td>
+          <select data-field="status">
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
+        </td>
+        <td><input data-field="item_name" type="text" /></td>
+        <td class="used-count mono"></td>
+        <td><button class="btn save-btn">Save</button></td>
+      </tr>
+    </template>
+
+    <script src="{{ url_for('static', filename='admin_item_list_view.js') }}"></script>
+  </body>
+</html>

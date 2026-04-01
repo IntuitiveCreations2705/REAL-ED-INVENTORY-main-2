@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Master View</title>
+  <link rel="stylesheet" href="./admin_theme.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="app-header card">
+      <div>
+        <h1>Master Inventory — Admin</h1>
+        <p class="muted">Full visibility, controlled edits, row-retained lifecycle</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary" id="btn-refresh">Refresh</button>
+        <button class="btn" id="btn-save" disabled>Save Changes</button>
+      </div>
+    </header>
+
+    <section class="controls card">
+      <div class="field-group">
+        <label for="search-item">Find item</label>
+        <input id="search-item" type="text" placeholder="Type item name (existence-first search)" autocomplete="off" />
+        <div id="suggestions" class="suggestions" role="listbox" aria-label="Item suggestions"></div>
+      </div>
+
+      <div class="field-group compact">
+        <label for="view-filter">View filter</label>
+        <select id="view-filter">
+          <option value="all">All rows</option>
+          <option value="active">Active only</option>
+          <option value="inactive">Inactive only</option>
+        </select>
+      </div>
+
+      <div class="field-group compact">
+        <label for="box-filter">Box number</label>
+        <input id="box-filter" type="text" placeholder="Filter by box" />
+      </div>
+    </section>
+
+    <section class="table-wrap card">
+      <table>
+        <thead>
+          <tr>
+            <th>Row ID</th>
+            <th>Status</th>
+            <th>Item ID</th>
+            <th>Item Name</th>
+            <th>Box</th>
+            <th>Location</th>
+            <th>Qty Req</th>
+            <th>Stock</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody id="master-table-body"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <template id="row-template">
+    <tr>
+      <td class="mono row-id"></td>
+      <td>
+        <button class="status-toggle" data-action="toggle-status"></button>
+      </td>
+      <td class="mono item-id"></td>
+      <td class="item-name"></td>
+      <td><input data-field="box_number" type="text" /></td>
+      <td><input data-field="storage_location" type="text" /></td>
+      <td><input data-field="qty_required" type="number" step="1" min="0" /></td>
+      <td><input data-field="stock_on_hand" type="number" step="1" min="0" /></td>
+      <td><input data-field="crew_notes" type="text" /></td>
+    </tr>
+  </template>
+
+  <script src="./admin_master_view.js"></script>
+</body>
+</html>

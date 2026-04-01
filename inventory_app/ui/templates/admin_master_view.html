@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Master Inventory</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='admin_theme.css') }}" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="card header">
+        <div>
+          <h1>Admin Master Inventory</h1>
+          <p>Live DB view with integrity-enforced editing.</p>
+        </div>
+        <div id="progress-counter" class="progress-counter"></div>
+        <div class="header-actions">
+          <a class="btn secondary btn-link" href="{{ url_for('item_list_page') }}">Item ID List Admin</a>
+          <label for="theme-select">Theme</label>
+          <select id="theme-select">
+            <option value="default">Default</option>
+            <option value="high-contrast">High Contrast</option>
+            <option value="low-glare">Low Glare</option>
+          </select>
+          <button id="refresh-btn" class="btn secondary">Refresh</button>
+        </div>
+      </header>
+
+      <section class="card controls">
+        <div class="control">
+          <label for="search-item">Filter by Description</label>
+          <input id="search-item" type="text" placeholder="Type text from description column" />
+        </div>
+
+        <div class="control small">
+          <label for="view-mode">View mode</label>
+          <select id="view-mode">
+            <option value="all">All</option>
+            <option value="unlinked" selected>Unlinked (needs matching)</option>
+            <option value="linked">Linked only</option>
+            <option value="active">Active only</option>
+            <option value="inactive">Inactive only</option>
+          </select>
+        </div>
+
+        <div class="control small">
+          <label for="box-filter">Box filter</label>
+          <input id="box-filter" type="text" placeholder="e.g. A-01" />
+        </div>
+      </section>
+
+      <section class="card table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Row ID</th>
+              <th>State</th>
+              <th>Link</th>
+              <th>Item ID</th>
+              <th>Item Name</th>
+              <th>Box</th>
+              <th>Location</th>
+              <th>Event Tags</th>
+              <th class="col-description">Description</th>
+              <th>Qty Req</th>
+              <th>Stock</th>
+              <th>Order Stock Qty</th>
+              <th>Notes</th>
+              <th>Restock Comments</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="rows-body"></tbody>
+        </table>
+      </section>
+
+      <footer id="status-bar" class="status-bar">Ready</footer>
+    </main>
+
+    <template id="row-template">
+      <tr>
+        <td class="mono row-id"></td>
+        <td><button class="state-toggle"></button></td>
+        <td class="link-status"></td>
+        <td><input data-field="item_id" type="text" class="mono" /></td>
+        <td class="cell-item-name">
+          <input data-field="item_name" type="text" placeholder="Type to search..." />
+          <div class="row-suggestions"></div>
+        </td>
+        <td><input data-field="box_number" type="text" /></td>
+        <td><input data-field="storage_location" type="text" /></td>
+        <td><input data-field="event_tags" type="text" /></td>
+        <td class="cell-description"><input data-field="description" type="text" /></td>
+        <td><input data-field="qty_required" type="number" step="1" min="0" /></td>
+        <td><input data-field="stock_on_hand" type="number" step="1" min="0" /></td>
+        <td><input data-field="order_stock_qty" type="number" step="1" min="0" /></td>
+        <td><input data-field="crew_notes" type="text" /></td>
+        <td><input data-field="restock_comments" type="text" /></td>
+        <td><button class="btn save-btn">Save</button></td>
+      </tr>
+    </template>
+
+    <script src="{{ url_for('static', filename='admin_master_view.js') }}"></script>
+  </body>
+</html>
