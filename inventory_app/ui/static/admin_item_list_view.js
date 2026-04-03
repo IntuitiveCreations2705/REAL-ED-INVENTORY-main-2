@@ -10,13 +10,24 @@ const els = {
   addRowBtn: document.getElementById('add-row-btn'),
   searchQ: document.getElementById('search-q'),
   statusFilter: document.getElementById('status-filter'),
+  capsDialog: document.getElementById('caps-dialog'),
+  capsYesBtn: document.getElementById('caps-yes-btn'),
+  capsNoBtn: document.getElementById('caps-no-btn'),
 };
 
 init();
 
 async function init() {
+  initCapsDialog();
   wireEvents();
   await loadRows();
+}
+
+function initCapsDialog() {
+  if (!els.capsDialog) return;
+  els.capsDialog.addEventListener('cancel', (e) => {
+    e.preventDefault();
+  });
 }
 
 function wireEvents() {
@@ -97,11 +108,25 @@ function renderRows() {
     nameInput.addEventListener('input', () => { row.item_name = nameInput.value; });
 
     tr.querySelector('.save-btn').addEventListener('click', async () => {
+      let itemName = (row.item_name || '').trim();
+      if (isAllCapsText(itemName)) {
+        const keepCaps = await askRequireCaps();
+        if (!keepCaps) {
+          itemName = toTitleCaseWithJoiners(itemName);
+          row.item_name = itemName;
+          nameInput.value = itemName;
+        }
+      } else {
+        itemName = toTitleCaseWithJoiners(itemName);
+        row.item_name = itemName;
+        nameInput.value = itemName;
+      }
+
       const payload = {
         original_item_id: row.is_new ? null : row.original_item_id,
         item_id: (row.item_id || '').trim(),
         status: row.status || 'Active',
-        item_name: (row.item_name || '').trim(),
+        item_name: itemName,
       };
 
       const res = await fetch('/api/item-list/upsert', {
@@ -131,4 +156,60 @@ function renderRows() {
 function setStatus(message, isError = false) {
   els.statusBar.textContent = message;
   els.statusBar.style.color = isError ? '#ff9aa8' : 'var(--muted)';
+}
+
+function isAllCapsText(value) {
+  const s = String(value || '').trim();
+  if (!s) return false;
+  const letters = s.replace(/[^A-Za-z]/g, '');
+  if (!letters) return false;
+  return letters === letters.toUpperCase();
+}
+
+function toTitleCaseWithJoiners(value) {
+  const s = String(value || '').trim();
+  if (!s) return s;
+
+  const joiners = new Set(['on', 'in', 'and', 'or', 'of', 'the', 'a', 'an', 'to', 'for', 'at', 'by']);
+  const words = s.toLowerCase().split(/\s+/);
+
+  return words
+    .map((w, i) => {
+      if (i > 0 && joiners.has(w)) return w;
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    })
+    .join(' ');
+}
+
+function askRequireCaps() {
+  if (
+    !els.capsDialog ||
+    !els.capsYesBtn ||
+    !els.capsNoBtn ||
+    typeof els.capsDialog.showModal !== 'function'
+  ) {
+    return Promise.resolve(window.confirm('Require Caps?\n\nOK = Yes, keep ALL CAPS\nCancel = No, apply capitalization rule'));
+  }
+
+  return new Promise((resolve) => {
+    const onYes = () => close(true);
+    const onNo = () => close(false);
+
+    const close = (answer) => {
+      els.capsYesBtn.removeEventListener('click', onYes);
+      els.capsNoBtn.removeEventListener('click', onNo);
+      els.capsDialog.close();
+      resolve(answer);
+    };
+
+    els.capsYesBtn.addEventListener('click', onYes);
+    els.capsNoBtn.addEventListener('click', onNo);
+    try {
+      els.capsDialog.showModal();
+    } catch {
+      els.capsYesBtn.removeEventListener('click', onYes);
+      els.capsNoBtn.removeEventListener('click', onNo);
+      resolve(window.confirm('Require Caps?\n\nOK = Yes, keep ALL CAPS\nCancel = No, apply capitalization rule'));
+    }
+  });
 }

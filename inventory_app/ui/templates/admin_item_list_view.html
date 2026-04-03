@@ -68,6 +68,17 @@
       </tr>
     </template>
 
+    <dialog id="caps-dialog" class="caps-dialog">
+      <form method="dialog" class="caps-dialog-form">
+        <h3>Require Caps?</h3>
+        <p>Item Name is fully uppercase. Keep ALL CAPS?</p>
+        <div class="caps-actions">
+          <button type="button" id="caps-yes-btn" class="btn">Yes</button>
+          <button type="button" id="caps-no-btn" class="btn secondary">No</button>
+        </div>
+      </form>
+    </dialog>
+
     <script src="{{ url_for('static', filename='admin_item_list_view.js') }}"></script>
   </body>
 </html>

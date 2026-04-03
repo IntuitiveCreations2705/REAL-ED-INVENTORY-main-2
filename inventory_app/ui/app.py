@@ -25,6 +25,20 @@ EDITABLE_FIELDS = {
     "is_active",
 }
 
+def parse_pipe_tags(raw_tags: str | None) -> list[str]:
+    if not raw_tags:
+        return []
+
+    tokens: list[str] = []
+    for chunk in str(raw_tags).split("|"):
+        tag = chunk.strip()
+        if not tag:
+            continue
+        tokens.append(f"|{tag}|")
+
+    # Preserve order, remove duplicates.
+    return list(dict.fromkeys(tokens))
+
 
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="static", template_folder="templates")
@@ -86,6 +100,7 @@ def create_app() -> Flask:
     def list_master() -> Any:
         view = request.args.get("view", "all").strip().lower()
         box = request.args.get("box", "").strip().lower()
+        event_name = request.args.get("event", "").strip()
 
         where = []
         params: list[Any] = []
@@ -98,6 +113,24 @@ def create_app() -> Flask:
         if box:
             where.append("LOWER(COALESCE(m.box_number, '')) LIKE '%' || ? || '%'")
             params.append(box)
+
+        if event_name and event_name.lower() != "all":
+            with get_conn() as conn:
+                event_row = conn.execute(
+                    "SELECT tags FROM event_name WHERE event_name = ?",
+                    (event_name,),
+                ).fetchone()
+
+            if event_row is None:
+                return jsonify([])
+
+            event_tags = parse_pipe_tags(event_row["tags"])
+            if event_tags:
+                tag_where = []
+                for tag in event_tags:
+                    tag_where.append("COALESCE(m.event_tags, '') LIKE ?")
+                    params.append(f"%{tag}%")
+                where.append(f"({' OR '.join(tag_where)})")
 
         where_clause = f"WHERE {' AND '.join(where)}" if where else ""
 
@@ -124,6 +157,19 @@ def create_app() -> Flask:
 
         with get_conn() as conn:
             rows = conn.execute(sql, params).fetchall()
+
+        return jsonify([dict(r) for r in rows])
+
+    @app.get("/api/events")
+    def list_events() -> Any:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT event_name, tags
+                FROM event_name
+                ORDER BY event_name ASC
+                """
+            ).fetchall()
 
         return jsonify([dict(r) for r in rows])
 

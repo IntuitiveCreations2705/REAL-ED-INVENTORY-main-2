@@ -7,47 +7,56 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='admin_theme.css') }}" />
   </head>
   <body>
-    <main class="app-shell">
-      <header class="card header">
-        <div>
-          <h1>Admin Master Inventory</h1>
-          <p>Live DB view with integrity-enforced editing.</p>
-        </div>
-        <div id="progress-counter" class="progress-counter"></div>
-        <div class="header-actions">
-          <a class="btn secondary btn-link" href="{{ url_for('item_list_page') }}">Item ID List Admin</a>
-          <label for="theme-select">Theme</label>
-          <select id="theme-select">
-            <option value="default">Default</option>
-            <option value="high-contrast">High Contrast</option>
-            <option value="low-glare">Low Glare</option>
-          </select>
-          <button id="refresh-btn" class="btn secondary">Refresh</button>
-        </div>
-      </header>
+    <main class="app-shell master-shell">
+      <div class="sticky-tools">
+        <header class="card header">
+          <div>
+            <h1>Admin Master Inventory</h1>
+            <p>Live DB view with integrity-enforced editing.</p>
+          </div>
+          <div id="progress-counter" class="progress-counter"></div>
+          <div class="header-actions">
+            <a class="btn secondary btn-link" href="{{ url_for('item_list_page') }}">Item ID List Admin</a>
+            <label for="theme-select">Theme</label>
+            <select id="theme-select">
+              <option value="default">Default</option>
+              <option value="high-contrast">High Contrast</option>
+              <option value="low-glare">Low Glare</option>
+            </select>
+            <button id="refresh-btn" class="btn secondary">Refresh</button>
+          </div>
+        </header>
 
-      <section class="card controls">
-        <div class="control">
-          <label for="search-item">Filter by Description</label>
-          <input id="search-item" type="text" placeholder="Type text from description column" />
-        </div>
+        <section class="card controls">
+          <div class="control">
+            <label for="search-item">Filter by Description</label>
+            <input id="search-item" type="text" placeholder="Type text from description column" />
+          </div>
 
-        <div class="control small">
-          <label for="view-mode">View mode</label>
-          <select id="view-mode">
-            <option value="all">All</option>
-            <option value="unlinked" selected>Unlinked (needs matching)</option>
-            <option value="linked">Linked only</option>
-            <option value="active">Active only</option>
-            <option value="inactive">Inactive only</option>
-          </select>
-        </div>
+          <div class="control small">
+            <label for="view-mode">View mode</label>
+            <select id="view-mode">
+              <option value="all">All</option>
+              <option value="unlinked" selected>Unlinked (needs matching)</option>
+              <option value="linked">Linked only</option>
+              <option value="active">Active only</option>
+              <option value="inactive">Inactive only</option>
+            </select>
+          </div>
 
-        <div class="control small">
-          <label for="box-filter">Box filter</label>
-          <input id="box-filter" type="text" placeholder="e.g. A-01" />
-        </div>
-      </section>
+          <div class="control small">
+            <label for="event-filter">Event</label>
+            <select id="event-filter">
+              <option value="">All</option>
+            </select>
+          </div>
+
+          <div class="control small">
+            <label for="box-filter">Box filter</label>
+            <input id="box-filter" type="text" placeholder="e.g. A-01" />
+          </div>
+        </section>
+      </div>
 
       <section class="card table-wrap">
         <table>
@@ -99,6 +108,17 @@
         <td><button class="btn save-btn">Save</button></td>
       </tr>
     </template>
+
+    <dialog id="caps-dialog" class="caps-dialog">
+      <form method="dialog" class="caps-dialog-form">
+        <h3>Require Caps Words?</h3>
+        <p>Description contains ALL CAPS word(s). Keep those words in CAPS?</p>
+        <div class="caps-actions">
+          <button type="button" id="caps-yes-btn" class="btn">Yes</button>
+          <button type="button" id="caps-no-btn" class="btn secondary">No</button>
+        </div>
+      </form>
+    </dialog>
 
     <script src="{{ url_for('static', filename='admin_master_view.js') }}"></script>
   </body>

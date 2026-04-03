@@ -1,0 +1,15 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Inventory Admin UI",
+			"type": "shell",
+			"command": "/Users/intuitivecreations2705gmail.com/Downloads/REAL-ED-INVENTORY-main/.venv/bin/python",
+			"args": [
+				"/Users/intuitivecreations2705gmail.com/Downloads/REAL-ED-INVENTORY-main/inventory_app/ui/run_admin.py"
+			],
+			"isBackground": true,
+			"group": "build"
+		}
+	]
+}

@@ -45,14 +45,37 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
+  min-height: 100vh;
   font-family: var(--font);
   font-size: 12pt;
   background: var(--bg);
   color: var(--text);
 }
 
-.app-shell { max-width: 1920px; width: calc(100vw - 36px); margin: 0 auto; padding: 14px; display: grid; gap: 10px; }
+.app-shell {
+  max-width: 1920px;
+  width: calc(100vw - 36px);
+  margin: 0 auto;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+
+.master-shell {
+  height: 100vh;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.master-shell .sticky-tools {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: grid;
+  gap: 10px;
+  padding-top: 2px;
+  background: var(--bg);
+}
 
 .header { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 14px; }
 .header p { margin: 3px 0 0; color: var(--muted); }
@@ -115,7 +138,14 @@ input, select {
 }
 
 .item-list-wrap {
-  overflow: hidden;
+  max-height: calc(100vh - 260px);
+  overflow: auto;
+}
+
+.item-list-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 6;
 }
 
 .item-list-table {
@@ -231,11 +261,15 @@ input, select {
 .cell-description { overflow: hidden; }
 .cell-description input { width: 100%; box-sizing: border-box; }
 
-.table-wrap { overflow: auto; }
+.master-shell .table-wrap {
+  min-height: 0;
+  overflow: auto;
+}
 table { width: 100%; min-width: 1120px; border-collapse: collapse; }
 thead th {
   position: sticky; top: 0;
   background: var(--surface);
+  z-index: 5;
   color: var(--muted);
   font-size: 0.78rem;
   letter-spacing: 0.03em;
@@ -355,4 +389,39 @@ tbody tr.row-discrepancy {
   border-radius: var(--radius-sm);
   z-index: 20;
   box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+}
+
+.caps-dialog {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  min-width: 320px;
+  padding: 0;
+}
+
+.caps-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.caps-dialog-form {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.caps-dialog-form h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.caps-dialog-form p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.caps-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }

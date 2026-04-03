@@ -10,18 +10,31 @@ const els = {
   statusBar: document.getElementById('status-bar'),
   refreshBtn: document.getElementById('refresh-btn'),
   viewMode: document.getElementById('view-mode'),
+  eventFilter: document.getElementById('event-filter'),
   boxFilter: document.getElementById('box-filter'),
   searchItem: document.getElementById('search-item'),
   themeSelect: document.getElementById('theme-select'),
   progressCounter: document.getElementById('progress-counter'),
+  capsDialog: document.getElementById('caps-dialog'),
+  capsYesBtn: document.getElementById('caps-yes-btn'),
+  capsNoBtn: document.getElementById('caps-no-btn'),
 };
 
 init();
 
 async function init() {
+  initCapsDialog();
   wireEvents();
+  await loadEvents();
   await loadRows();
   await checkHealth();
+}
+
+function initCapsDialog() {
+  if (!els.capsDialog) return;
+  els.capsDialog.addEventListener('cancel', (e) => {
+    e.preventDefault();
+  });
 }
 
 function wireEvents() {
@@ -32,6 +45,7 @@ function wireEvents() {
 
   els.viewMode.addEventListener('change', applyFilters);
   els.boxFilter.addEventListener('input', applyFilters);
+  els.eventFilter.addEventListener('change', loadRows);
 
   els.searchItem.addEventListener('input', () => {
     applyFilters();
@@ -47,10 +61,26 @@ async function loadRows() {
     view: els.viewMode.value,
     box: els.boxFilter.value,
   });
+  if (els.eventFilter.value) {
+    params.set('event', els.eventFilter.value);
+  }
   const res = await fetch(`/api/master?${params.toString()}`);
   state.rows = await res.json();
   applyFilters();
   setStatus(`Loaded ${state.rows.length} rows.`);
+}
+
+async function loadEvents() {
+  const res = await fetch('/api/events');
+  const events = await res.json();
+
+  els.eventFilter.innerHTML = '<option value="">All</option>';
+  for (const e of events) {
+    const opt = document.createElement('option');
+    opt.value = e.event_name;
+    opt.textContent = e.event_name;
+    els.eventFilter.appendChild(opt);
+  }
 }
 
 function applyFilters() {
@@ -152,13 +182,25 @@ function renderRows() {
     });
 
     tr.querySelector('.save-btn').addEventListener('click', async () => {
+      const descriptionInput = tr.querySelector('input[data-field="description"]');
+      let descriptionValue = stripBrackets(descriptionInput.value || '');
+
+      if (hasAllCapsWords(descriptionValue)) {
+        const keepCapsWords = await askRequireCaps();
+        descriptionValue = normalizeDescriptionCase(descriptionValue, keepCapsWords);
+        descriptionInput.value = descriptionValue;
+      } else {
+        descriptionValue = normalizeDescriptionCase(descriptionValue, false);
+        descriptionInput.value = descriptionValue;
+      }
+
       const payload = {
         item_id: tr.querySelector('input[data-field="item_id"]').value || null,
         item_name: tr.querySelector('input[data-field="item_name"]').value || null,
         box_number: tr.querySelector('input[data-field="box_number"]').value || null,
         storage_location: tr.querySelector('input[data-field="storage_location"]').value || null,
         event_tags: tr.querySelector('input[data-field="event_tags"]').value || null,
-        description: tr.querySelector('input[data-field="description"]').value || null,
+        description: descriptionValue || null,
         qty_required: tr.querySelector('input[data-field="qty_required"]').value || 0,
         stock_on_hand: tr.querySelector('input[data-field="stock_on_hand"]').value || 0,
         order_stock_qty: tr.querySelector('input[data-field="order_stock_qty"]').value || null,
@@ -192,6 +234,85 @@ function renderRows() {
 
     els.body.appendChild(tr);
   }
+}
+
+function normalizeDescriptionCase(value, keepCapsWords) {
+  const s = String(value || '').trim();
+  if (!s) return s;
+
+  const joiners = new Set(['on', 'in', 'and', 'or', 'of', 'the', 'a', 'an', 'to', 'for', 'at', 'by']);
+  const words = s.split(/\s+/);
+
+  return words
+    .map((originalWord, i) => {
+      const letterOnly = originalWord.replace(/[^A-Za-z]/g, '');
+      const isCapsWord = letterOnly.length >= 2 && letterOnly === letterOnly.toUpperCase();
+
+      if (keepCapsWords && isCapsWord) {
+        return originalWord.toUpperCase();
+      }
+
+      const lowerWord = originalWord.toLowerCase();
+      const joinerKey = lowerWord.replace(/[^a-z]/g, '');
+      if (i > 0 && joiners.has(joinerKey)) return lowerWord;
+
+      return capitalizeFirstLetter(lowerWord);
+    })
+    .join(' ');
+}
+
+function hasAllCapsWords(value) {
+  const words = String(value || '').trim().split(/\s+/);
+  return words.some((w) => {
+    const letters = w.replace(/[^A-Za-z]/g, '');
+    return letters.length >= 2 && letters === letters.toUpperCase();
+  });
+}
+
+function capitalizeFirstLetter(word) {
+  const idx = word.search(/[a-z]/);
+  if (idx === -1) return word;
+  return word.slice(0, idx) + word.charAt(idx).toUpperCase() + word.slice(idx + 1);
+}
+
+function stripBrackets(value) {
+  return String(value || '')
+    .replace(/[\[\](){}]/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function askRequireCaps() {
+  if (
+    !els.capsDialog ||
+    !els.capsYesBtn ||
+    !els.capsNoBtn ||
+    typeof els.capsDialog.showModal !== 'function'
+  ) {
+    return Promise.resolve(window.confirm('Require Caps?\n\nOK = Yes, keep ALL CAPS\nCancel = No, apply capitalization rule'));
+  }
+
+  return new Promise((resolve) => {
+    const onYes = () => close(true);
+    const onNo = () => close(false);
+
+    const close = (answer) => {
+      els.capsYesBtn.removeEventListener('click', onYes);
+      els.capsNoBtn.removeEventListener('click', onNo);
+      els.capsDialog.close();
+      resolve(answer);
+    };
+
+    els.capsYesBtn.addEventListener('click', onYes);
+    els.capsNoBtn.addEventListener('click', onNo);
+    try {
+      els.capsDialog.showModal();
+    } catch {
+      els.capsYesBtn.removeEventListener('click', onYes);
+      els.capsNoBtn.removeEventListener('click', onNo);
+      resolve(window.confirm('Require Caps?\n\nOK = Yes, keep ALL CAPS\nCancel = No, apply capitalization rule'));
+    }
+  });
 }
 
 function syncStateBtn(btn, isActive) {
