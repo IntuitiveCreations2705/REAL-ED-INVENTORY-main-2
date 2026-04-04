@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
+import uuid
 from typing import Any
 
 from flask import Flask, jsonify, render_template, request
 
-ROOT = Path(__file__).resolve().parents[2]
-DB_PATH = ROOT / "sql_inventory_master.db"
+from audit import write_audit
+from db import DB_PATH, get_conn
 
 EDITABLE_FIELDS = {
     "item_id",
@@ -40,14 +40,29 @@ def parse_pipe_tags(raw_tags: str | None) -> list[str]:
     return list(dict.fromkeys(tokens))
 
 
+def api_error(
+    message: str,
+    status: int = 400,
+    *,
+    code: str | None = None,
+    **extras: Any,
+) -> tuple[Any, int]:
+    """Return a consistent JSON error envelope."""
+    body: dict[str, Any] = {"error": message}
+    if code:
+        body["code"] = code
+    body.update(extras)
+    return jsonify(body), status
+
+
+def _changed_by() -> str:
+    """Returns active username once Phase 2 auth is wired; falls back to remote IP."""
+    # TODO Phase 2: return session.get("username", request.remote_addr or "system")
+    return request.remote_addr or "system"
+
+
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="static", template_folder="templates")
-
-    def get_conn() -> sqlite3.Connection:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
 
     @app.get("/")
     def index() -> str:
@@ -63,9 +78,11 @@ def create_app() -> Flask:
             counts = conn.execute(
                 """
                 SELECT
-                  (SELECT COUNT(*) FROM event_name) AS event_count,
-                  (SELECT COUNT(*) FROM item_id_list) AS item_count,
-                  (SELECT COUNT(*) FROM master_inventory) AS master_count
+                  (SELECT COUNT(*) FROM event_name)       AS event_count,
+                  (SELECT COUNT(*) FROM item_id_list)     AS item_count,
+                  (SELECT COUNT(*) FROM master_inventory) AS master_count,
+                  (SELECT COUNT(*) FROM audit_log)        AS audit_count,
+                  (SELECT COUNT(*) FROM users)            AS user_count
                 """
             ).fetchone()
             fk_rows = conn.execute("PRAGMA foreign_key_check").fetchall()
@@ -149,7 +166,10 @@ def create_app() -> Flask:
                 m.count_confirmed,
                 m.order_stock_qty,
                 m.restock_comments,
-                m.is_active
+                m.is_active,
+                m.version,
+                m.updated_at,
+                m.updated_by
             FROM master_inventory m
             {where_clause}
             ORDER BY m.row_id ASC
@@ -176,48 +196,76 @@ def create_app() -> Flask:
     @app.patch("/api/master/<int:row_id>")
     def update_master_row(row_id: int) -> Any:
         payload = request.get_json(silent=True) or {}
+        client_version = payload.pop("version", None)
         updates = {k: v for k, v in payload.items() if k in EDITABLE_FIELDS}
         if not updates:
-            return jsonify({"error": "No editable fields provided."}), 400
+            return api_error("No editable fields provided.")
 
         if "item_name" in updates and "item_id" not in updates:
-            return jsonify(
-                {
-                    "error": "item_name is governed by item_id. Save with item_id; item_name will auto-sync from item_id_list.",
-                    "row_id": row_id,
-                    "field": "item_name",
-                }
-            ), 409
+            return api_error(
+                "item_name is governed by item_id. Save with item_id; item_name will auto-sync from item_id_list.",
+                409,
+                code="governed_field",
+                row_id=row_id,
+                field="item_name",
+            )
 
         if "item_id" in updates:
             raw_item_id = updates.get("item_id")
             item_id = str(raw_item_id).strip() if raw_item_id is not None else ""
+            updates["item_id"] = item_id if item_id else None
             if not item_id:
-                updates["item_id"] = None
                 updates["item_name"] = None
-            else:
-                updates["item_id"] = item_id
 
+        changed_by = _changed_by()
+        session_id = str(uuid.uuid4())
         assignments: list[str] = []
         values: list[Any] = []
+        updated: Any = None
+        fk_rows: list[Any] = []
 
         try:
             with get_conn() as conn:
+                # ── Optimistic concurrency ──────────────────────────────────
+                if client_version is not None:
+                    current = conn.execute(
+                        "SELECT version FROM master_inventory WHERE row_id = ?",
+                        (row_id,),
+                    ).fetchone()
+                    if current is None:
+                        return api_error("Row not found.", 404)
+                    if int(current["version"]) != int(client_version):
+                        return api_error(
+                            "Stale data: this row was modified by another user. Refresh and retry.",
+                            409,
+                            code="stale_version",
+                            row_id=row_id,
+                        )
+
+                # ── Capture old values for audit ────────────────────────────
+                old_row = conn.execute(
+                    "SELECT * FROM master_inventory WHERE row_id = ?", (row_id,)
+                ).fetchone()
+                if old_row is None:
+                    return api_error("Row not found.", 404)
+
+                # ── Resolve item_id → item_name sync ───────────────────────
                 if "item_id" in updates and updates["item_id"] is not None:
                     ref = conn.execute(
                         "SELECT item_name FROM item_id_list WHERE item_id = ?",
                         (updates["item_id"],),
                     ).fetchone()
                     if ref is None:
-                        return jsonify(
-                            {
-                                "error": "Discrepancy: item_id not found in item_id_list.",
-                                "row_id": row_id,
-                                "field": "item_id",
-                            }
-                        ), 409
+                        return api_error(
+                            "Discrepancy: item_id not found in item_id_list.",
+                            409,
+                            code="item_id_missing",
+                            row_id=row_id,
+                            field="item_id",
+                        )
                     updates["item_name"] = ref["item_name"]
 
+                # ── Build SET clause ────────────────────────────────────────
                 for field, value in updates.items():
                     assignments.append(f"{field} = ?")
                     if field in {"qty_required", "stock_on_hand", "order_stock_qty"} and value is not None:
@@ -227,48 +275,92 @@ def create_app() -> Flask:
                     else:
                         values.append(value)
 
-                values.append(row_id)
+                # Lifecycle fields stamped on every save
+                assignments += [
+                    "updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')",
+                    "updated_by = ?",
+                    "version = version + 1",
+                ]
+                values += [changed_by, row_id]
 
                 cur = conn.execute(
                     f"UPDATE master_inventory SET {', '.join(assignments)} WHERE row_id = ?",
                     values,
                 )
                 if cur.rowcount == 0:
-                    return jsonify({"error": "Row not found."}), 404
+                    return api_error("Row not found.", 404)
                 updated = conn.execute(
                     "SELECT * FROM master_inventory WHERE row_id = ?", (row_id,)
                 ).fetchone()
                 fk_rows = conn.execute("PRAGMA foreign_key_check").fetchall()
-
                 if fk_rows:
-                    return jsonify(
-                        {
-                            "error": "Discrepancy detected by FK check. Save blocked until rectified.",
-                            "row_id": row_id,
-                        }
-                    ), 409
+                    return api_error(
+                        "Discrepancy detected by FK check. Save blocked until rectified.",
+                        409,
+                        code="fk_violation",
+                        row_id=row_id,
+                    )
+
+                # ── Audit (within same transaction) ─────────────────────────
+                for field, new_val in updates.items():
+                    old_val = old_row[field] if field in old_row.keys() else None
+                    write_audit(
+                        conn,
+                        table_name="master_inventory",
+                        row_ref=f"row_id={row_id}",
+                        action="UPDATE",
+                        field_name=field,
+                        old_value=old_val,
+                        new_value=new_val,
+                        changed_by=changed_by,
+                        session_id=session_id,
+                        device_hint=request.remote_addr,
+                    )
+
         except sqlite3.IntegrityError as exc:
-            return jsonify({"error": f"Integrity error: {exc}"}), 409
+            return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
 
         return jsonify({"row": dict(updated), "foreign_key_violations": len(fk_rows)})
 
     @app.post("/api/master/<int:row_id>/toggle-active")
     def toggle_active(row_id: int) -> Any:
+        changed_by = _changed_by()
         with get_conn() as conn:
             row = conn.execute(
                 "SELECT is_active FROM master_inventory WHERE row_id = ?", (row_id,)
             ).fetchone()
             if row is None:
-                return jsonify({"error": "Row not found."}), 404
+                return api_error("Row not found.", 404)
 
-            new_value = 0 if row["is_active"] == 1 else 1
+            old_value = row["is_active"]
+            new_value = 0 if old_value == 1 else 1
             conn.execute(
-                "UPDATE master_inventory SET is_active = ? WHERE row_id = ?",
-                (new_value, row_id),
+                """
+                UPDATE master_inventory
+                SET is_active = ?,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+                    updated_by = ?,
+                    version    = version + 1
+                WHERE row_id = ?
+                """,
+                (new_value, changed_by, row_id),
             )
             updated = conn.execute(
-                "SELECT row_id, is_active FROM master_inventory WHERE row_id = ?", (row_id,)
+                "SELECT row_id, is_active, version, updated_at, updated_by"
+                " FROM master_inventory WHERE row_id = ?",
+                (row_id,),
             ).fetchone()
+            write_audit(
+                conn,
+                table_name="master_inventory",
+                row_ref=f"row_id={row_id}",
+                action="TOGGLE",
+                field_name="is_active",
+                old_value=old_value,
+                new_value=new_value,
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
 
         return jsonify(dict(updated))
 
@@ -279,35 +371,58 @@ def create_app() -> Flask:
         item_name = payload.get("item_name")
 
         if not item_id or not item_name:
-            return jsonify({"error": "item_id and item_name are required."}), 400
+            return api_error("item_id and item_name are required.")
 
+        changed_by = _changed_by()
         with get_conn() as conn:
             exists = conn.execute(
-                """
-                SELECT 1
-                FROM item_id_list
-                WHERE item_id = ? AND item_name = ?
-                """,
+                "SELECT 1 FROM item_id_list WHERE item_id = ? AND item_name = ?",
                 (item_id, item_name),
             ).fetchone()
             if exists is None:
-                return jsonify({"error": "Selected item pair does not exist in item_id_list."}), 409
+                return api_error(
+                    "Selected item pair does not exist in item_id_list.",
+                    409,
+                    code="item_pair_missing",
+                )
+
+            old_row = conn.execute(
+                "SELECT item_id FROM master_inventory WHERE row_id = ?", (row_id,)
+            ).fetchone()
 
             try:
                 cur = conn.execute(
-                    "UPDATE master_inventory SET item_id = ?, item_name = ? WHERE row_id = ?",
-                    (item_id, item_name, row_id),
+                    """
+                    UPDATE master_inventory
+                    SET item_id = ?, item_name = ?,
+                        updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+                        updated_by = ?,
+                        version    = version + 1
+                    WHERE row_id = ?
+                    """,
+                    (item_id, item_name, changed_by, row_id),
                 )
             except sqlite3.IntegrityError as exc:
-                return jsonify({"error": f"Integrity error: {exc}"}), 409
+                return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
 
             if cur.rowcount == 0:
-                return jsonify({"error": "Row not found."}), 404
+                return api_error("Row not found.", 404)
 
             row = conn.execute(
-                "SELECT row_id, item_id, item_name FROM master_inventory WHERE row_id = ?",
+                "SELECT row_id, item_id, item_name, version FROM master_inventory WHERE row_id = ?",
                 (row_id,),
             ).fetchone()
+            write_audit(
+                conn,
+                table_name="master_inventory",
+                row_ref=f"row_id={row_id}",
+                action="LINK",
+                field_name="item_id",
+                old_value=old_row["item_id"] if old_row else None,
+                new_value=item_id,
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
 
         return jsonify(dict(row))
 
@@ -335,6 +450,9 @@ def create_app() -> Flask:
               i.item_id,
               i.status,
               i.item_name,
+              i.version,
+              i.updated_at,
+              i.updated_by,
               (
                 SELECT COUNT(*)
                 FROM master_inventory m
@@ -357,14 +475,16 @@ def create_app() -> Flask:
         item_id = (payload.get("item_id") or "").strip()
         item_name = (payload.get("item_name") or "").strip()
         status = (payload.get("status") or "").strip()
+        client_version = payload.get("version", None)
 
         if not item_id:
-            return jsonify({"error": "item_id is required."}), 400
+            return api_error("item_id is required.")
         if not item_name:
-            return jsonify({"error": "item_name is required."}), 400
+            return api_error("item_name is required.")
         if status not in {"Active", "Inactive"}:
-            return jsonify({"error": "status must be Active or Inactive."}), 400
+            return api_error("status must be Active or Inactive.")
 
+        changed_by = _changed_by()
         try:
             with get_conn() as conn:
                 if original_item_id:
@@ -374,6 +494,7 @@ def create_app() -> Flask:
                           i.item_id,
                           i.item_name,
                           i.status,
+                          i.version,
                           (
                             SELECT COUNT(*)
                             FROM master_inventory m
@@ -385,12 +506,21 @@ def create_app() -> Flask:
                         (original_item_id,),
                     ).fetchone()
                     if existing is None:
-                        return jsonify({"error": "Original item_id not found."}), 404
+                        return api_error("Original item_id not found.", 404)
 
                     if item_id != existing["item_id"]:
-                        return jsonify(
-                            {"error": "item_id is immutable for existing rows. Create a new item_id instead."}
-                        ), 409
+                        return api_error(
+                            "item_id is immutable for existing rows. Create a new item_id instead.",
+                            409,
+                            code="immutable_item_id",
+                        )
+
+                    if client_version is not None and int(existing["version"]) != int(client_version):
+                        return api_error(
+                            "Stale data: this item was modified by another user. Refresh and retry.",
+                            409,
+                            code="stale_version",
+                        )
 
                     old_item_id = existing["item_id"]
                     old_item_name = existing["item_name"]
@@ -411,61 +541,71 @@ def create_app() -> Flask:
                             temp_item_id = f"{old_item_id}__TMP__{n}"
 
                         conn.execute(
-                            """
-                            INSERT INTO item_id_list (item_id, status, item_name)
-                            VALUES (?, ?, ?)
-                            """,
+                            "INSERT INTO item_id_list (item_id, status, item_name) VALUES (?, ?, ?)",
                             (temp_item_id, existing["status"], old_item_name),
                         )
-
                         conn.execute(
-                            """
-                            UPDATE master_inventory
-                            SET item_id = ?, item_name = ?
-                            WHERE item_id = ? AND item_name = ?
-                            """,
+                            "UPDATE master_inventory SET item_id = ?, item_name = ?"
+                            " WHERE item_id = ? AND item_name = ?",
                             (temp_item_id, old_item_name, old_item_id, old_item_name),
                         )
-
                         conn.execute(
                             """
                             UPDATE item_id_list
-                            SET item_name = ?, status = ?
+                            SET item_name = ?, status = ?,
+                                updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+                                updated_by = ?, version = version + 1
                             WHERE item_id = ?
                             """,
-                            (item_name, status, old_item_id),
+                            (item_name, status, changed_by, old_item_id),
                         )
-
                         conn.execute(
-                            """
-                            UPDATE master_inventory
-                            SET item_id = ?, item_name = ?
-                            WHERE item_id = ? AND item_name = ?
-                            """,
+                            "UPDATE master_inventory SET item_id = ?, item_name = ?"
+                            " WHERE item_id = ? AND item_name = ?",
                             (old_item_id, item_name, temp_item_id, old_item_name),
                         )
-
                         conn.execute("DELETE FROM item_id_list WHERE item_id = ?", (temp_item_id,))
                         saved_item_id = old_item_id
                     else:
                         conn.execute(
                             """
                             UPDATE item_id_list
-                            SET item_id = ?, status = ?, item_name = ?
+                            SET item_id = ?, status = ?, item_name = ?,
+                                updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+                                updated_by = ?, version = version + 1
                             WHERE item_id = ?
                             """,
-                            (item_id, status, item_name, original_item_id),
+                            (item_id, status, item_name, changed_by, original_item_id),
                         )
                         saved_item_id = item_id
+
+                    write_audit(
+                        conn,
+                        table_name="item_id_list",
+                        row_ref=f"item_id={saved_item_id}",
+                        action="UPDATE",
+                        field_name="item_name",
+                        old_value=old_item_name,
+                        new_value=item_name,
+                        changed_by=changed_by,
+                        device_hint=request.remote_addr,
+                    )
                 else:
                     conn.execute(
-                        """
-                        INSERT INTO item_id_list (item_id, status, item_name)
-                        VALUES (?, ?, ?)
-                        """,
+                        "INSERT INTO item_id_list (item_id, status, item_name) VALUES (?, ?, ?)",
                         (item_id, status, item_name),
                     )
                     saved_item_id = item_id
+                    write_audit(
+                        conn,
+                        table_name="item_id_list",
+                        row_ref=f"item_id={item_id}",
+                        action="INSERT",
+                        old_value=None,
+                        new_value=f"{item_id} | {item_name} | {status}",
+                        changed_by=changed_by,
+                        device_hint=request.remote_addr,
+                    )
 
                 row = conn.execute(
                     """
@@ -473,6 +613,9 @@ def create_app() -> Flask:
                       i.item_id,
                       i.status,
                       i.item_name,
+                      i.version,
+                      i.updated_at,
+                      i.updated_by,
                       (
                         SELECT COUNT(*)
                         FROM master_inventory m
@@ -484,7 +627,7 @@ def create_app() -> Flask:
                     (saved_item_id,),
                 ).fetchone()
         except sqlite3.IntegrityError as exc:
-            return jsonify({"error": f"Integrity error: {exc}"}), 409
+            return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
 
         return jsonify({"row": dict(row)})
 

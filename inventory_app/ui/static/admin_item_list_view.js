@@ -124,6 +124,7 @@ function renderRows() {
 
       const payload = {
         original_item_id: row.is_new ? null : row.original_item_id,
+        version: row.is_new ? undefined : row.version,
         item_id: (row.item_id || '').trim(),
         status: row.status || 'Active',
         item_name: itemName,
@@ -173,12 +174,21 @@ function toTitleCaseWithJoiners(value) {
   const joiners = new Set(['on', 'in', 'and', 'or', 'of', 'the', 'a', 'an', 'to', 'for', 'at', 'by']);
   const words = s.toLowerCase().split(/\s+/);
 
-  return words
+  const titled = words
     .map((w, i) => {
       if (i > 0 && joiners.has(w)) return w;
       return w.charAt(0).toUpperCase() + w.slice(1);
     })
     .join(' ');
+
+  return normalizeMeasurementText(titled);
+}
+
+function normalizeMeasurementText(value) {
+  return String(value || '').replace(
+    /\b(\d+(?:\.\d+)?)\s*(mm|cm|m|km|in|ft|yd)\b/gi,
+    (_, num, unit) => `${num}${String(unit).toLowerCase()}`,
+  );
 }
 
 function askRequireCaps() {

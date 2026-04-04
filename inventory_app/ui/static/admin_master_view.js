@@ -195,6 +195,7 @@ function renderRows() {
       }
 
       const payload = {
+        version: row.version ?? undefined,
         item_id: tr.querySelector('input[data-field="item_id"]').value || null,
         item_name: tr.querySelector('input[data-field="item_name"]').value || null,
         box_number: tr.querySelector('input[data-field="box_number"]').value || null,
@@ -243,7 +244,7 @@ function normalizeDescriptionCase(value, keepCapsWords) {
   const joiners = new Set(['on', 'in', 'and', 'or', 'of', 'the', 'a', 'an', 'to', 'for', 'at', 'by']);
   const words = s.split(/\s+/);
 
-  return words
+  const titled = words
     .map((originalWord, i) => {
       const letterOnly = originalWord.replace(/[^A-Za-z]/g, '');
       const isCapsWord = letterOnly.length >= 2 && letterOnly === letterOnly.toUpperCase();
@@ -259,6 +260,15 @@ function normalizeDescriptionCase(value, keepCapsWords) {
       return capitalizeFirstLetter(lowerWord);
     })
     .join(' ');
+
+  return normalizeMeasurementText(titled);
+}
+
+function normalizeMeasurementText(value) {
+  return String(value || '').replace(
+    /\b(\d+(?:\.\d+)?)\s*(mm|cm|m|km|in|ft|yd)\b/gi,
+    (_, num, unit) => `${num}${String(unit).toLowerCase()}`,
+  );
 }
 
 function hasAllCapsWords(value) {
