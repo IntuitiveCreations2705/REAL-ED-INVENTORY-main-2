@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inventory System Map</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --card: #141b33;
+      --text: #e8edff;
+      --muted: #aab4da;
+      --accent: #78a6ff;
+      --border: #26315b;
+    }
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+      padding: 24px;
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    p { margin: 0 0 16px; color: var(--muted); }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin: 16px 0;
+      overflow-x: auto;
+    }
+    h2 { margin: 4px 0 12px; color: var(--accent); font-size: 18px; }
+    .legend { font-size: 14px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Inventory System Visual Map</h1>
+    <p>Backend ↔ Satellites architecture view.</p>
+
+    <div class="panel">
+      <h2>1) Big Picture</h2>
+      <pre class="mermaid">
+flowchart LR
+    U[Admin User] --> MUI[Admin Master View\nadmin_master_view.html + admin_master_view.js]
+    U --> IUI[Item List View\nadmin_item_list_view.html + admin_item_list_view.js]
+
+    MUI -->|HTTP /api/*| FLASK[Flask App\napp.py]
+    IUI -->|HTTP /api/*| FLASK
+
+    RUN[run_admin.py\nstartup + schema warning check] --> FLASK
+
+    FLASK --> DBMOD[db.py\nget_conn + WAL + FK ON]
+    FLASK --> AUD[audit.py\nappend-only audit writer]
+
+    DBMOD --> SQLITE[(sql_inventory_master.db)]
+    AUD --> SQLITE
+
+    MIG[migrate.py] --> MIGSQL[inventory_app/migrations/*.sql]
+    MIGSQL --> SQLITE
+
+    SQLITE --> T1[(master_inventory)]
+    SQLITE --> T2[(item_id_list)]
+    SQLITE --> T3[(event_name)]
+    SQLITE --> T4[(audit_log)]
+    SQLITE --> T5[(users/roles)]
+      </pre>
+    </div>
+
+    <div class="panel">
+      <h2>2) API Surface</h2>
+      <pre class="mermaid">
+flowchart TB
+    A[/GET /api/health/] --> D[(DB + FK check)]
+    B[/GET /api/master/] --> M[(master_inventory)]
+    C[/PATCH /api/master/:row_id/] --> M
+    E[/POST /api/master/:row_id/toggle-active/] --> M
+    F[/POST /api/master/:row_id/link-item/] --> M
+    F --> I[(item_id_list)]
+    G[/GET /api/suggest?q=/] --> I
+    H[/GET /api/events/] --> EV[(event_name)]
+    I2[/GET /api/item-list/] --> I
+    J[/POST /api/item-list/upsert/] --> I
+
+    C --> L[(audit_log)]
+    E --> L
+    F --> L
+    J --> L
+      </pre>
+    </div>
+
+    <div class="panel">
+      <h2>3) Save Master Row Sequence</h2>
+      <pre class="mermaid">
+sequenceDiagram
+    participant UI as Admin Master UI
+    participant API as Flask app.py
+    participant DB as SQLite
+    participant AUD as audit.py
+
+    UI->>API: PATCH /api/master/{row_id} + payload(version, fields)
+    API->>DB: Read current row/version
+    alt stale version
+        API-->>UI: 409 stale_version
+    else valid
+        opt item_id supplied
+            API->>DB: Validate item_id in item_id_list
+            alt missing
+                API-->>UI: 409 item_id_missing
+            end
+        end
+        API->>DB: UPDATE master_inventory (version + 1, updated_at/by)
+        API->>DB: PRAGMA foreign_key_check
+        alt FK violation
+            API-->>UI: 409 fk_violation
+        else clean
+            API->>AUD: write_audit(...)
+            AUD->>DB: INSERT audit_log row(s)
+            API-->>UI: 200 updated row
+        end
+    end
+      </pre>
+    </div>
+
+    <div class="panel">
+      <h2>4) Data Backbone</h2>
+      <pre class="mermaid">
+erDiagram
+    ITEM_ID_LIST ||--o{ MASTER_INVENTORY : item_id
+    EVENT_NAME }o--o{ MASTER_INVENTORY : event_tags text matching
+    MASTER_INVENTORY ||--o{ AUDIT_LOG : changes logged
+    ITEM_ID_LIST ||--o{ AUDIT_LOG : changes logged
+    USERS ||--o{ AUDIT_LOG : changed_by
+    ROLES ||--o{ USERS : role_id
+      </pre>
+      <p class="legend">If this page renders, your diagram setup is working.</p>
+    </div>
+  </div>
+
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+  </script>
+</body>
+</html>

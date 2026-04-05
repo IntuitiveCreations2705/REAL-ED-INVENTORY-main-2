@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>System Map</title>
+  <style>
+    body { margin: 0; font-family: Inter, Segoe UI, system-ui, sans-serif; background: #0b1020; color: #e8edff; }
+    .wrap { max-width: 1400px; margin: 0 auto; padding: 20px; }
+    .meta { color: #aab4da; font-size: 14px; margin-bottom: 12px; }
+    .card { border: 1px solid #26315b; background: #141b33; border-radius: 12px; padding: 12px; }
+    .frame { width: 100%; min-height: 720px; border: 0; border-radius: 8px; background: #0b1020; }
+    .err { color: #ff9aa8; }
+    a { color: #78a6ff; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>System Map (Generated PNG)</h1>
+    <div id="meta" class="meta">Loading map metadata…</div>
+    <div class="card">
+      <iframe id="map-live" class="frame" title="Live system map" src="/system-map/live"></iframe>
+    </div>
+  </div>
+
+  <script>
+    (async () => {
+      const meta = document.getElementById('meta');
+      const live = document.getElementById('map-live');
+      try {
+        const res = await fetch('/api/system-map');
+        const data = await res.json();
+        const v = data.source_hash || Date.now();
+        live.src = `${data.live_url || '/system-map/live'}?v=${encodeURIComponent(v)}`;
+        if (data.status === 'ok') {
+          meta.innerHTML = `status: ok · generated_at: ${data.generated_at || 'n/a'} · renderer: ${data.renderer || 'n/a'} · source_hash: ${String(data.source_hash || '').slice(0, 12)} · <a href="${data.source_url}" target="_blank" rel="noreferrer">source</a>`;
+        } else {
+          meta.innerHTML = `<span class="err">status: degraded · ${data.error || 'generation issue'}</span> · live map still available`;
+        }
+      } catch (err) {
+        meta.innerHTML = `<span class="err">Failed to load /api/system-map: ${String(err)}</span>`;
+      }
+    })();
+  </script>
+</body>
+</html>

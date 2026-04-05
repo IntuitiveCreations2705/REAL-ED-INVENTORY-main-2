@@ -2,6 +2,9 @@
 
 Integrity-first Admin UI wired directly to `sql_inventory_master.db`.
 
+## Visual architecture map
+- Open [SYSTEM_MAP.md](SYSTEM_MAP.md) in Markdown Preview for a live system diagram.
+
 ## What this baseline does
 - Loads live rows from `master_inventory`
 - Allows Admin edits on core columns

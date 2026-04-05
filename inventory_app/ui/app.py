@@ -4,10 +4,11 @@ import sqlite3
 import uuid
 from typing import Any
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file
 
 from audit import write_audit
 from db import DB_PATH, get_conn
+from system_map_assets import SOURCE_FILE, ensure_system_map_assets
 
 EDITABLE_FIELDS = {
     "item_id",
@@ -40,6 +41,46 @@ def parse_pipe_tags(raw_tags: str | None) -> list[str]:
     return list(dict.fromkeys(tokens))
 
 
+def normalize_pipe_tags(raw_tags: str | None) -> str:
+    """Normalize tag text to canonical pipe format: |TAG1||TAG2| (uppercase)."""
+    if raw_tags is None:
+        return ""
+
+    text = str(raw_tags).strip()
+    if not text:
+        return ""
+
+    # Accept values typed as |NEEDED|, comma-separated, or plain words.
+    chunks: list[str] = []
+    for part in text.replace(",", "|").split("|"):
+        token = part.strip()
+        if not token:
+            continue
+        chunks.append(token.upper())
+
+    unique = list(dict.fromkeys(chunks))
+    return "".join(f"|{tag}|" for tag in unique)
+
+
+def normalize_location_label(raw_value: Any) -> str | None:
+    if raw_value is None:
+        return None
+    text = str(raw_value).strip()
+    if not text:
+        return None
+    return text.upper()
+
+
+def _as_number(value: Any, default: float = 0.0) -> float:
+    if value in (None, ""):
+        return default
+    return float(value)
+
+
+def _computed_order_stock_qty(qty_required: Any, stock_on_hand: Any) -> float:
+    return max(_as_number(qty_required) - _as_number(stock_on_hand), 0.0)
+
+
 def api_error(
     message: str,
     status: int = 400,
@@ -64,6 +105,13 @@ def _changed_by() -> str:
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="static", template_folder="templates")
 
+    # Ensure generated visual map assets exist for UX/backend introspection.
+    system_map_boot_error: str | None = None
+    try:
+        ensure_system_map_assets()
+    except Exception as exc:  # pragma: no cover - startup should not crash UI
+        system_map_boot_error = str(exc)
+
     @app.get("/")
     def index() -> str:
         return render_template("admin_master_view.html")
@@ -71,6 +119,10 @@ def create_app() -> Flask:
     @app.get("/item-list")
     def item_list_page() -> str:
         return render_template("admin_item_list_view.html")
+
+    @app.get("/system-map")
+    def system_map_page() -> str:
+        return render_template("system_map_view.html")
 
     @app.get("/api/health")
     def health() -> Any:
@@ -86,13 +138,68 @@ def create_app() -> Flask:
                 """
             ).fetchone()
             fk_rows = conn.execute("PRAGMA foreign_key_check").fetchall()
+
+            # Enrich violation rows with item_id / item_name where possible
+            violation_details: list[dict] = []
+            for r in fk_rows[:30]:
+                detail: dict[str, Any] = {
+                    "table": r["table"],
+                    "rowid": r["rowid"],
+                    "parent": r["parent"],
+                }
+                if r["table"] == "master_inventory":
+                    extra = conn.execute(
+                        "SELECT item_id, item_name FROM master_inventory WHERE row_id = ?",
+                        (r["rowid"],),
+                    ).fetchone()
+                    if extra:
+                        detail["item_id"] = extra["item_id"]
+                        detail["item_name"] = extra["item_name"]
+                violation_details.append(detail)
+
         return jsonify(
             {
                 "db_path": str(DB_PATH),
                 "counts": dict(counts),
                 "foreign_key_violations": len(fk_rows),
+                "fk_violation_rows": violation_details,
             }
         )
+
+    @app.get("/api/system-map")
+    def system_map_info() -> Any:
+        nonlocal system_map_boot_error
+        try:
+            manifest = ensure_system_map_assets()
+            return jsonify(
+                {
+                    "status": "ok",
+                    **manifest,
+                    "live_url": "/system-map/live",
+                    "image_url": "/static/system_map_latest.png",
+                    "source_url": "/system-map/source",
+                }
+            )
+        except Exception as exc:
+            if system_map_boot_error is None:
+                system_map_boot_error = str(exc)
+            return jsonify(
+                {
+                    "status": "degraded",
+                    "error": system_map_boot_error,
+                    "live_url": "/system-map/live",
+                    "image_url": "/static/system_map_latest.png",
+                    "source_url": "/system-map/source",
+                }
+            )
+
+    @app.get("/system-map/live")
+    def system_map_live() -> Any:
+        return send_file(SOURCE_FILE.with_suffix(".html"), mimetype="text/html")
+
+    @app.get("/system-map/source")
+    def system_map_source() -> Any:
+        return send_file(SOURCE_FILE, mimetype="text/markdown")
 
     @app.get("/api/suggest")
     def suggest() -> Any:
@@ -193,10 +300,96 @@ def create_app() -> Flask:
 
         return jsonify([dict(r) for r in rows])
 
+    @app.post("/api/master")
+    def insert_master_row() -> Any:
+        payload = request.get_json(silent=True) or {}
+        fields = {k: v for k, v in payload.items() if k in EDITABLE_FIELDS}
+        manual_order_override = bool(payload.get("order_stock_qty_manual_override"))
+
+        event_tags    = normalize_pipe_tags(fields.pop("event_tags", ""))
+        description   = str(fields.pop("description",  "") or "")
+        qty_required  = float(fields.pop("qty_required", 0) or 0)
+        stock_on_hand = float(fields.pop("stock_on_hand", 0) or 0)
+        order_stock_qty = fields.pop("order_stock_qty", None)
+        is_active     = int(fields.pop("is_active", 1))
+        item_id       = (fields.pop("item_id", None) or "").strip() or None
+        item_name: str | None = None
+        final_order_stock_qty = (
+            _as_number(order_stock_qty)
+            if manual_order_override and order_stock_qty not in (None, "")
+            else _computed_order_stock_qty(qty_required, stock_on_hand)
+        )
+
+        changed_by = _changed_by()
+        session_id = str(uuid.uuid4())
+
+        try:
+            with get_conn() as conn:
+                if item_id:
+                    ref = conn.execute(
+                        "SELECT item_name FROM item_id_list WHERE item_id = ?",
+                        (item_id,),
+                    ).fetchone()
+                    if ref is None:
+                        return api_error(
+                            "item_id not found in item_id_list.",
+                            409,
+                            code="item_id_missing",
+                        )
+                    item_name = ref["item_name"]
+
+                cur = conn.execute(
+                    """
+                    INSERT INTO master_inventory
+                        (item_id, item_name, box_number, storage_location,
+                         event_tags, description, crew_notes,
+                         qty_required, stock_on_hand, order_stock_qty,
+                         restock_comments, is_active,
+                         updated_at, updated_by, version)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,
+                            strftime('%Y-%m-%dT%H:%M:%SZ','now'),?,1)
+                    """,
+                    (
+                        item_id,
+                        item_name,
+                        fields.get("box_number"),
+                        normalize_location_label(fields.get("storage_location")),
+                        event_tags,
+                        description,
+                        fields.get("crew_notes"),
+                        qty_required,
+                        stock_on_hand,
+                        final_order_stock_qty,
+                        fields.get("restock_comments"),
+                        is_active,
+                        changed_by,
+                    ),
+                )
+                new_id = cur.lastrowid
+                inserted = conn.execute(
+                    "SELECT * FROM master_inventory WHERE row_id = ?", (new_id,)
+                ).fetchone()
+                write_audit(
+                    conn,
+                    table_name="master_inventory",
+                    row_ref=f"row_id={new_id}",
+                    action="INSERT",
+                    old_value=None,
+                    new_value="new row",
+                    changed_by=changed_by,
+                    session_id=session_id,
+                    device_hint=request.remote_addr,
+                )
+        except sqlite3.IntegrityError as exc:
+            return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
+
+        return jsonify({"row": dict(inserted)}), 201
+
     @app.patch("/api/master/<int:row_id>")
     def update_master_row(row_id: int) -> Any:
         payload = request.get_json(silent=True) or {}
         client_version = payload.pop("version", None)
+        manual_order_override = bool(payload.get("order_stock_qty_manual_override"))
         updates = {k: v for k, v in payload.items() if k in EDITABLE_FIELDS}
         if not updates:
             return api_error("No editable fields provided.")
@@ -216,6 +409,12 @@ def create_app() -> Flask:
             updates["item_id"] = item_id if item_id else None
             if not item_id:
                 updates["item_name"] = None
+
+        if "event_tags" in updates:
+            updates["event_tags"] = normalize_pipe_tags(updates.get("event_tags"))
+
+        if "storage_location" in updates:
+            updates["storage_location"] = normalize_location_label(updates.get("storage_location"))
 
         changed_by = _changed_by()
         session_id = str(uuid.uuid4())
@@ -264,6 +463,15 @@ def create_app() -> Flask:
                             field="item_id",
                         )
                     updates["item_name"] = ref["item_name"]
+
+                next_qty_required = updates.get("qty_required", old_row["qty_required"])
+                next_stock_on_hand = updates.get("stock_on_hand", old_row["stock_on_hand"])
+                incoming_order_stock_qty = updates.get("order_stock_qty", old_row["order_stock_qty"])
+                updates["order_stock_qty"] = (
+                    _as_number(incoming_order_stock_qty)
+                    if manual_order_override and incoming_order_stock_qty not in (None, "")
+                    else _computed_order_stock_qty(next_qty_required, next_stock_on_hand)
+                )
 
                 # ── Build SET clause ────────────────────────────────────────
                 for field, value in updates.items():

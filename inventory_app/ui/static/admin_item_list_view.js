@@ -1,5 +1,6 @@
 const state = {
   rows: [],
+  nextClientKey: 1,
 };
 
 const els = {
@@ -15,12 +16,53 @@ const els = {
   capsNoBtn: document.getElementById('caps-no-btn'),
 };
 
+const REQUIRED_ITEM_LIST_FIELDS = [
+  ['item_id', 'Item ID'],
+  ['status', 'Status'],
+  ['item_name', 'Item Name'],
+];
+
 init();
 
 async function init() {
   initCapsDialog();
   wireEvents();
   await loadRows();
+  seedNewItemFromQuery();
+  await checkHealth();
+}
+
+function seedNewItemFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const seededName = (params.get('new_item_name') || '').trim();
+  if (!seededName) return;
+
+  state.rows.unshift({
+    original_item_id: null,
+    item_id: '',
+    status: 'Active',
+    item_name: seededName,
+    used_count: 0,
+    is_new: true,
+    isDirty: true,
+    clientKey: `new-${state.nextClientKey++}`,
+  });
+  renderRows();
+  setStatus(`Add New ready in Item ID List for: ${seededName}`);
+}
+
+async function checkHealth() {
+  try {
+    const res = await fetch('/api/health');
+    const h = await res.json();
+    if (h.foreign_key_violations > 0) {
+      const details = (h.fk_violation_rows || []).map((r) => {
+        const key = r.item_id ? `${r.item_id} / ${r.item_name || '?'}` : `rowid=${r.rowid}`;
+        return `${r.table}[${key}]`;
+      }).join('  ·  ');
+      setStatus(`⚠ FK violations (${h.foreign_key_violations}): ${details || 'see /api/health for detail'}`, true);
+    }
+  } catch (_) { /* non-blocking */ }
 }
 
 function initCapsDialog() {
@@ -49,6 +91,8 @@ function wireEvents() {
       item_name: '',
       used_count: 0,
       is_new: true,
+      isDirty: false,
+      clientKey: `new-${state.nextClientKey++}`,
     });
     renderRows();
     setStatus('New row added. Fill and Save.');
@@ -67,6 +111,8 @@ async function loadRows() {
     ...r,
     original_item_id: r.item_id,
     is_new: false,
+    isDirty: false,
+    clientKey: `row-${r.item_id}`,
   }));
   renderRows();
   setStatus(`Loaded ${state.rows.length} item rows.`);
@@ -77,6 +123,9 @@ function renderRows() {
 
   for (const row of state.rows) {
     const tr = els.rowTemplate.content.firstElementChild.cloneNode(true);
+    tr.dataset.clientKey = row.clientKey;
+
+    attachDirtyRowGuard(tr, row);
 
     const idInput = tr.querySelector('input[data-field="item_id"]');
     const statusSelect = tr.querySelector('select[data-field="status"]');
@@ -99,13 +148,20 @@ function renderRows() {
       idInput.title = 'item_id is immutable for existing rows';
     }
 
-    idInput.addEventListener('input', () => { row.item_id = idInput.value; });
+    idInput.addEventListener('input', () => {
+      row.item_id = idInput.value;
+      markRowDirty(row);
+    });
     statusSelect.addEventListener('change', () => {
       row.status = statusSelect.value;
+      markRowDirty(row);
       statusSelect.classList.toggle('status-active', statusSelect.value === 'Active');
       statusSelect.classList.toggle('status-inactive', statusSelect.value === 'Inactive');
     });
-    nameInput.addEventListener('input', () => { row.item_name = nameInput.value; });
+    nameInput.addEventListener('input', () => {
+      row.item_name = nameInput.value;
+      markRowDirty(row);
+    });
 
     tr.querySelector('.save-btn').addEventListener('click', async () => {
       let itemName = (row.item_name || '').trim();
@@ -120,6 +176,17 @@ function renderRows() {
         itemName = toTitleCaseWithJoiners(itemName);
         row.item_name = itemName;
         nameInput.value = itemName;
+      }
+
+      const missingFields = validateItemListRequiredFields(tr, itemName);
+      if (missingFields.length > 0) {
+        const firstMissing = missingFields[0];
+        const target = tr.querySelector(`[data-field="${firstMissing.field}"]`);
+        if (target) target.focus();
+        return setStatus(
+          `${row.is_new ? 'New row' : `Item ${row.item_id || ''}`}: complete required fields. Missing: ${missingFields.map((entry) => entry.label).join(', ')}`,
+          true,
+        );
       }
 
       const payload = {
@@ -144,10 +211,13 @@ function renderRows() {
       Object.assign(row, data.row, {
         original_item_id: data.row.item_id,
         is_new: false,
+        isDirty: false,
+        clientKey: `row-${data.row.item_id}`,
       });
 
       setStatus(`Saved ${row.item_id}.`);
       await loadRows();
+      await checkHealth();
     });
 
     els.body.appendChild(tr);
@@ -157,6 +227,53 @@ function renderRows() {
 function setStatus(message, isError = false) {
   els.statusBar.textContent = message;
   els.statusBar.style.color = isError ? '#ff9aa8' : 'var(--muted)';
+}
+
+function markRowDirty(row) {
+  row.isDirty = true;
+}
+
+function getBlockingDirtyRow(targetRow) {
+  return state.rows.find((row) => row.isDirty && row.clientKey !== targetRow.clientKey) || null;
+}
+
+function focusRowSave(row) {
+  const saveBtn = els.body.querySelector(`tr[data-client-key="${row.clientKey}"] .save-btn`);
+  if (saveBtn) {
+    setTimeout(() => saveBtn.focus(), 0);
+  }
+}
+
+function attachDirtyRowGuard(tr, row) {
+  tr.addEventListener('mousedown', (e) => {
+    const control = e.target.closest('input, button, select');
+    if (!control) return;
+    const blockingRow = getBlockingDirtyRow(row);
+    if (!blockingRow) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setStatus(`Save changes first in row ${blockingRow.item_id || 'NEW'} before editing another row.`, true);
+    focusRowSave(blockingRow);
+  }, true);
+
+  tr.addEventListener('focusin', () => {
+    const blockingRow = getBlockingDirtyRow(row);
+    if (!blockingRow) return;
+    setStatus(`Save changes first in row ${blockingRow.item_id || 'NEW'} before editing another row.`, true);
+    focusRowSave(blockingRow);
+  });
+}
+
+function validateItemListRequiredFields(tr, itemName) {
+  return REQUIRED_ITEM_LIST_FIELDS
+    .map(([field, label]) => {
+      const control = tr.querySelector(`[data-field="${field}"]`);
+      const rawValue = field === 'item_name'
+        ? String(itemName || '').trim()
+        : String(control?.value || '').trim();
+      return rawValue ? null : { field, label };
+    })
+    .filter(Boolean);
 }
 
 function isAllCapsText(value) {
