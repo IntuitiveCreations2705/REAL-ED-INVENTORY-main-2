@@ -58,6 +58,25 @@
             <input id="box-filter" type="text" placeholder="e.g. A-01" />
           </div>
         </section>
+
+        <section class="card case-rules-panel" aria-labelledby="case-rules-title">
+          <details>
+            <summary>
+              <span id="case-rules-title">Case Rules</span>
+              <span class="case-rules-summary">Quick guide for save formatting</span>
+            </summary>
+            <div class="case-rules-content">
+              <ul>
+                <li><strong>Description / Notes / Restock:</strong> Title Case on save; joiner words stay lowercase after the first word.</li>
+                <li><strong>CAPS prompt:</strong> if any ALL-CAPS words are found in those text fields, save asks once whether to keep them uppercase.</li>
+                <li><strong>Box:</strong> Title Case letters and numbers only, for example <em>Zen Zone 2</em>.</li>
+                <li><strong>Location:</strong> forced to full UPPER CASE, for example <em>ZEN ZONE 2</em>.</li>
+                <li><strong>Event Tags:</strong> stored as uppercase pipe tags like <em>|NEEDED||PIPES|</em>.</li>
+                <li><strong>Measurements:</strong> matched units are normalized on save, for example <em>25 m</em> becomes <em>25m</em>.</li>
+              </ul>
+            </div>
+          </details>
+        </section>
       </div>
 
       <section class="card table-wrap">

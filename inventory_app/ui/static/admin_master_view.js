@@ -4,6 +4,7 @@ const state = {
   suggestions: [],
   eventTagCatalog: [],
   nextClientKey: 1,
+  saveInProgressClientKey: null,
 };
 
 const els = {
@@ -203,6 +204,7 @@ function focusRowSave(row) {
 
 function attachDirtyRowGuard(tr, row) {
   tr.addEventListener('mousedown', (e) => {
+    if (state.saveInProgressClientKey) return;
     const control = e.target.closest('input, button, select');
     if (!control) return;
     const blockingRow = getBlockingDirtyRow(row);
@@ -212,13 +214,6 @@ function attachDirtyRowGuard(tr, row) {
     setStatus(`Save changes first in row ${blockingRow.row_id ?? 'NEW'} before editing another row.`, true);
     focusRowSave(blockingRow);
   }, true);
-
-  tr.addEventListener('focusin', () => {
-    const blockingRow = getBlockingDirtyRow(row);
-    if (!blockingRow) return;
-    setStatus(`Save changes first in row ${blockingRow.row_id ?? 'NEW'} before editing another row.`, true);
-    focusRowSave(blockingRow);
-  });
 }
 
 function applyFilters() {
@@ -503,6 +498,10 @@ function renderRows() {
     });
 
     tr.querySelector('.save-btn').addEventListener('click', async () => {
+      if (state.saveInProgressClientKey) return;
+      state.saveInProgressClientKey = row.clientKey;
+
+      try {
       if (row.is_new && !String(tr.querySelector('input[data-field="item_id"]').value || '').trim()) {
         itemNameInput.focus();
         return setStatus('New row: first action must be Item Name search + existing link. If Existing=False, use Add New in Item ID List.', true);
@@ -515,32 +514,19 @@ function renderRows() {
       let crewNotesValue = stripBrackets(crewNotesInput.value || '');
       let restockCommentsValue = stripBrackets(restockCommentsInput.value || '');
 
-      if (hasAllCapsWords(descriptionValue)) {
-        const keepCapsWords = await askRequireCaps();
-        descriptionValue = normalizeDescriptionCase(descriptionValue, keepCapsWords);
-        descriptionInput.value = descriptionValue;
-      } else {
-        descriptionValue = normalizeDescriptionCase(descriptionValue, false);
-        descriptionInput.value = descriptionValue;
-      }
+      const needsCapsPrompt =
+        hasAllCapsWords(descriptionValue) ||
+        hasAllCapsWords(crewNotesValue) ||
+        hasAllCapsWords(restockCommentsValue);
+      const keepCapsWords = needsCapsPrompt ? await askRequireCaps() : false;
 
-      if (hasAllCapsWords(crewNotesValue)) {
-        const keepCapsWords = await askRequireCaps();
-        crewNotesValue = normalizeDescriptionCase(crewNotesValue, keepCapsWords);
-        crewNotesInput.value = crewNotesValue;
-      } else {
-        crewNotesValue = normalizeDescriptionCase(crewNotesValue, false);
-        crewNotesInput.value = crewNotesValue;
-      }
+      descriptionValue = normalizeDescriptionCase(descriptionValue, keepCapsWords);
+      crewNotesValue = normalizeDescriptionCase(crewNotesValue, keepCapsWords);
+      restockCommentsValue = normalizeDescriptionCase(restockCommentsValue, keepCapsWords);
 
-      if (hasAllCapsWords(restockCommentsValue)) {
-        const keepCapsWords = await askRequireCaps();
-        restockCommentsValue = normalizeDescriptionCase(restockCommentsValue, keepCapsWords);
-        restockCommentsInput.value = restockCommentsValue;
-      } else {
-        restockCommentsValue = normalizeDescriptionCase(restockCommentsValue, false);
-        restockCommentsInput.value = restockCommentsValue;
-      }
+      descriptionInput.value = descriptionValue;
+      crewNotesInput.value = crewNotesValue;
+      restockCommentsInput.value = restockCommentsValue;
 
       const missingFields = validateRequiredRowFields(tr, descriptionValue);
       if (missingFields.length > 0) {
@@ -636,6 +622,9 @@ function renderRows() {
       tr.classList.remove('row-discrepancy');
       await checkHealth();
       renderRows();
+      } finally {
+        state.saveInProgressClientKey = null;
+      }
     });
 
     els.body.appendChild(tr);

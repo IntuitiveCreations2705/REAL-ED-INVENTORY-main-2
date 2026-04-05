@@ -85,6 +85,52 @@ body {
 .control { display: grid; gap: 5px; position: relative; }
 .control.small { align-content: start; }
 
+.case-rules-panel {
+  padding: 10px 12px;
+}
+
+.case-rules-panel details {
+  display: grid;
+  gap: 10px;
+}
+
+.case-rules-panel summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 700;
+}
+
+.case-rules-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.case-rules-summary {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 400;
+}
+
+.case-rules-content {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.case-rules-content ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.case-rules-content strong {
+  color: var(--text);
+}
+
 label { color: var(--muted); font-size: 0.82rem; }
 input, select {
   height: 32px;

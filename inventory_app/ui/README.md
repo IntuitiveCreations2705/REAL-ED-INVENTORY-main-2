@@ -4,6 +4,11 @@ Integrity-first Admin UI wired directly to `sql_inventory_master.db`.
 
 ## Visual architecture map
 - Open [SYSTEM_MAP.md](SYSTEM_MAP.md) in Markdown Preview for a live system diagram.
+- Open [CAPS_RULES.md](CAPS_RULES.md) for the stored capitalization and field-format rules.
+<<<<<<< Updated upstream
+- Open [PUSH_CMD_SYSTEM.md](PUSH_CMD_SYSTEM.md) for the pre-action git push checklist and command recipes.
+=======
+>>>>>>> Stashed changes
 
 ## What this baseline does
 - Loads live rows from `master_inventory`
