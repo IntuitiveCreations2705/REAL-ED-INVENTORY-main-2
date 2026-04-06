@@ -16,8 +16,9 @@ DB_PATH = ROOT / "sql_inventory_master.db"
 _REQUIRED_COLUMNS: dict[str, set[str]] = {
     "master_inventory": {"version", "updated_at", "updated_by", "created_at"},
     "item_id_list":     {"version", "updated_at", "updated_by", "created_at"},
+    "event_tag_catalog": {"tag_name", "status", "created_at", "updated_at", "version"},
 }
-_REQUIRED_TABLES = {"roles", "users", "audit_log"}
+_REQUIRED_TABLES = {"roles", "users", "audit_log", "event_tag_catalog"}
 
 
 def get_conn() -> sqlite3.Connection:

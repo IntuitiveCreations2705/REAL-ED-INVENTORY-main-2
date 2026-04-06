@@ -32,6 +32,10 @@ Owner: Admin/Product Ops
 ## Completion list (setup)
 
 - [x] Add named owners for Product/Technical/Data roles (current: ME for all roles)
+- [ ] Later: perform repeat-use Admin flow validation pass (5–10 cycles of edit/save/link/toggle/filter)
+  - Note: "Tunnel Of Turbulence" is data/content terminology only, not a system stability label.
+- [ ] Later: build vertical-menu and horizontal-menu view modes as a UX preference chooser (like Theme selector)
+- [ ] Later: define NOTES column standards (field size limits + default UX visibility behavior)
 
 ---
 

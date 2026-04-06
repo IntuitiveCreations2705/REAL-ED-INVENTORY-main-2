@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from flask import Flask, jsonify, render_template, request, send_file
@@ -11,9 +12,11 @@ from db import DB_PATH, get_conn
 from rules import (
     as_number as _as_number,
     computed_order_stock_qty as _computed_order_stock_qty,
+    normalize_box_label,
     normalize_location_label,
     normalize_pipe_tags,
     parse_pipe_tags,
+    validate_event_tags_against_catalog,
 )
 from system_map_assets import SOURCE_FILE, ensure_system_map_assets
 
@@ -273,6 +276,12 @@ def create_app() -> Flask:
             else _computed_order_stock_qty(qty_required, stock_on_hand)
         )
 
+        # ── Validate event_tags against Active catalog ──────────────────────
+        with get_conn() as tag_conn:
+            is_valid, error_msg = validate_event_tags_against_catalog(event_tags, tag_conn)
+            if not is_valid:
+                return api_error(error_msg or "Invalid tags.", 422, code="tag_validation_error")
+
         changed_by = _changed_by()
         session_id = str(uuid.uuid4())
 
@@ -305,7 +314,7 @@ def create_app() -> Flask:
                     (
                         item_id,
                         item_name,
-                        fields.get("box_number"),
+                        normalize_box_label(fields.get("box_number")),
                         normalize_location_label(fields.get("storage_location")),
                         event_tags,
                         description,
@@ -366,8 +375,21 @@ def create_app() -> Flask:
         if "event_tags" in updates:
             updates["event_tags"] = normalize_pipe_tags(updates.get("event_tags"))
 
+        if "box_number" in updates:
+            updates["box_number"] = normalize_box_label(updates.get("box_number"))
+
         if "storage_location" in updates:
             updates["storage_location"] = normalize_location_label(updates.get("storage_location"))
+
+        # ── Validate event_tags against Active catalog ──────────────────────
+        if "event_tags" in updates:
+            normalized_tags = updates["event_tags"]
+            with get_conn() as tag_conn:
+                is_valid, error_msg = validate_event_tags_against_catalog(
+                    normalized_tags, tag_conn
+                )
+                if not is_valid:
+                    return api_error(error_msg or "Invalid tags.", 422, code="tag_validation_error", row_id=row_id)
 
         changed_by = _changed_by()
         session_id = str(uuid.uuid4())
@@ -786,6 +808,156 @@ def create_app() -> Flask:
                     WHERE i.item_id = ?
                     """,
                     (saved_item_id,),
+                ).fetchone()
+        except sqlite3.IntegrityError as exc:
+            return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
+
+        return jsonify({"row": dict(row)})
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Event Tag Catalog API (governance, lifecycle, role-based access)
+    # ────────────────────────────────────────────────────────────────────────
+
+    @app.get("/api/event-tags")
+    def list_event_tags() -> Any:
+        """Fetch all tags in catalog, ordered by sort_order."""
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT tag_name, status, description, sort_order, owner, version,
+                       created_at, created_by, updated_at, updated_by
+                FROM event_tag_catalog
+                ORDER BY sort_order ASC, tag_name ASC
+                """
+            ).fetchall()
+        return jsonify([dict(r) for r in rows])
+
+    @app.post("/api/event-tags")
+    def create_event_tag() -> Any:
+        """Create new tag in catalog. Senior admin only."""
+        payload = request.get_json(silent=True) or {}
+        tag_name = str(payload.get("tag_name", "")).strip()
+        description = str(payload.get("description", "")).strip() or None
+        sort_order = payload.get("sort_order")
+
+        if not tag_name:
+            return api_error("tag_name is required.", 400)
+
+        tag_name = tag_name.upper()
+        changed_by = _changed_by()
+        now = datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
+
+        try:
+            with get_conn() as conn:
+                # Check if tag already exists.
+                existing = conn.execute(
+                    "SELECT tag_name FROM event_tag_catalog WHERE tag_name = ?",
+                    (tag_name,),
+                ).fetchone()
+                if existing:
+                    return api_error(f"Tag '{tag_name}' already exists.", 409, code="tag_exists")
+
+                conn.execute(
+                    """
+                    INSERT INTO event_tag_catalog
+                      (tag_name, status, description, sort_order, owner,
+                       created_at, created_by, updated_at, updated_by, version)
+                    VALUES (?, 'Active', ?, ?, ?, ?, ?, ?, ?, 1)
+                    """,
+                    (tag_name, description, sort_order, changed_by, now, changed_by, now, changed_by),
+                )
+                write_audit(
+                    conn,
+                    table_name="event_tag_catalog",
+                    row_ref=f"tag_name={tag_name}",
+                    action="INSERT",
+                    old_value=None,
+                    new_value=f"{tag_name} | {description}",
+                    changed_by=changed_by,
+                    device_hint=request.remote_addr,
+                )
+
+                row = conn.execute(
+                    "SELECT * FROM event_tag_catalog WHERE tag_name = ?", (tag_name,)
+                ).fetchone()
+        except sqlite3.IntegrityError as exc:
+            return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
+
+        return jsonify({"row": dict(row)}), 201
+
+    @app.patch("/api/event-tags/<tag_name>")
+    def update_event_tag(tag_name: str) -> Any:
+        """Update tag status or description. Senior admin only."""
+        tag_name = tag_name.strip().upper()
+        payload = request.get_json(silent=True) or {}
+        updates: dict[str, Any] = {}
+
+        if "status" in payload:
+            status = str(payload["status"]).strip()
+            if status not in ("Active", "Inactive"):
+                return api_error("status must be 'Active' or 'Inactive'.", 400)
+            updates["status"] = status
+
+        if "description" in payload:
+            updates["description"] = str(payload.get("description", "")).strip() or None
+
+        if "sort_order" in payload:
+            updates["sort_order"] = payload.get("sort_order")
+
+        if not updates:
+            return api_error("No updatable fields provided.", 400)
+
+        changed_by = _changed_by()
+        now = datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
+
+        try:
+            with get_conn() as conn:
+                # Fetch old row for audit.
+                old_row = conn.execute(
+                    "SELECT * FROM event_tag_catalog WHERE tag_name = ?", (tag_name,)
+                ).fetchone()
+                if old_row is None:
+                    return api_error(f"Tag '{tag_name}' not found.", 404)
+
+                # Build SET clause.
+                assignments = [f"updated_at = '{now}'",
+                               "updated_by = ?",
+                               "version = version + 1"]
+                values = [changed_by]
+
+                for field, value in updates.items():
+                    assignments.append(f"{field} = ?")
+                    values.append(value)
+
+                values.append(tag_name)
+
+                conn.execute(
+                    f"""
+                    UPDATE event_tag_catalog
+                    SET {', '.join(assignments)}
+                    WHERE tag_name = ?
+                    """,
+                    values,
+                )
+
+                # Audit each changed field.
+                for field, new_value in updates.items():
+                    old_value = old_row.get(field)
+                    if old_value != new_value:
+                        write_audit(
+                            conn,
+                            table_name="event_tag_catalog",
+                            row_ref=f"tag_name={tag_name}",
+                            action="UPDATE",
+                            field_name=field,
+                            old_value=str(old_value) if old_value is not None else None,
+                            new_value=str(new_value) if new_value is not None else None,
+                            changed_by=changed_by,
+                            device_hint=request.remote_addr,
+                        )
+
+                row = conn.execute(
+                    "SELECT * FROM event_tag_catalog WHERE tag_name = ?", (tag_name,)
                 ).fetchone()
         except sqlite3.IntegrityError as exc:
             return api_error(f"Integrity error: {exc}", 409, code="integrity_error")

@@ -17,12 +17,21 @@ Primary shared source: `rules.py` (import this module from routes/views instead 
   - Normalizes storage/location labels to uppercase.
   - Source: rules.py
 
+- `normalize_box_label(raw_value)`
+  - Normalizes `box_number` to uppercase.
+  - Source: rules.py
+
 - `as_number(value, default=0.0)`
   - Numeric coercion helper.
   - Source: rules.py
 
 - `computed_order_stock_qty(qty_required, stock_on_hand)`
   - Derived rule: `max(qty_required - stock_on_hand, 0)`.
+  - Source: rules.py
+
+- `validate_event_tags_against_catalog(normalized_tags_str, conn)`
+  - Validates event_tags against Active tags in event_tag_catalog.
+  - Rejects Inactive tags with error message listing unavailable tags.
   - Source: rules.py
 
 - `api_error(message, status=400, code=None, **extras)`
@@ -38,6 +47,10 @@ Primary shared source: `rules.py` (import this module from routes/views instead 
   - On save, `item_id` must exist in `item_id_list`; then `item_name` auto-syncs from lookup.
   - Source: `PATCH /api/master/<row_id>` and `POST /api/master` in app.py
 
+- Box normalization rule
+  - `box_number` is normalized to uppercase on insert and update.
+  - Source: `POST /api/master`, `PATCH /api/master/<row_id>` in app.py via `rules.py`
+
 - Optimistic concurrency (`version`)
   - Save rejected if client `version` does not match DB (`stale_version`).
   - Source: `PATCH /api/master/<row_id>` in app.py
@@ -49,6 +62,12 @@ Primary shared source: `rules.py` (import this module from routes/views instead 
 - Foreign key integrity safeguard
   - Post-write `PRAGMA foreign_key_check`; write is blocked on violation (`fk_violation`).
   - Source: app.py
+
+- Event tags validation rule
+  - `event_tags` field is validated against `event_tag_catalog`; only Active tags allowed.
+  - Saves rejected if any tag is Inactive (`tag_validation_error`).
+  - Governance: Senior admin only can modify tag catalog; tag lifecycle controlled by status field.
+  - Source: `POST /api/master`, `PATCH /api/master/<row_id>` via `validate_event_tags_against_catalog()` in rules.py
 
 - Lifecycle stamping
   - `updated_at`, `updated_by`, `version = version + 1` on writes.
@@ -84,6 +103,12 @@ Primary shared source: `rules.py` (import this module from routes/views instead 
   - `write_audit(...)` must run in same transaction as data change.
   - Source: audit.py
 
+- Event Tag Catalog API endpoints
+  - `GET /api/event-tags` → list all tags (all roles)
+  - `POST /api/event-tags` → create tag (senior admin only)
+  - `PATCH /api/event-tags/<tag_name>` → update tag status/description (senior admin only)
+  - Source: app.py
+
 ## Existing UI rule reference
 - Field capitalization/format rules are documented separately in `CAPS_RULES.md` (front-end normalization and prompts).
 
@@ -94,3 +119,4 @@ When adding a new view, call the same backend APIs and do not duplicate business
 3. Treat `item_name` as derived from `item_id` where applicable.
 4. Keep audit writes in the same DB transaction.
 5. Run health/FK checks after risky migration changes.
+6. Validate all user-provided taxonomies (event tags, locations, boxes) against their governance catalogs.

@@ -293,6 +293,18 @@ function sizeWeight(desc) {
 function renderRows() {
   els.body.innerHTML = '';
 
+  if (!state.filteredRows.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 15;
+    td.style.padding = '14px';
+    td.style.color = 'var(--muted)';
+    td.textContent = 'No rows match current filters. Set View mode to All and clear filters, then Refresh.';
+    tr.appendChild(td);
+    els.body.appendChild(tr);
+    return;
+  }
+
   for (const row of state.filteredRows) {
     const tr = els.rowTemplate.content.firstElementChild.cloneNode(true);
     tr.dataset.rowId = row.row_id;
