@@ -665,7 +665,8 @@ function normalizeDescriptionCase(value, keepCapsWords) {
 
       const lowerWord = originalWord.toLowerCase();
       const joinerKey = lowerWord.replace(/[^a-z]/g, '');
-      if (i > 0 && joiners.has(joinerKey)) return lowerWord;
+      const isPureAlphaWord = /^[a-z]+$/.test(lowerWord);
+      if (i > 0 && isPureAlphaWord && joiners.has(joinerKey)) return lowerWord;
 
       return capitalizeFirstLetter(lowerWord);
     })

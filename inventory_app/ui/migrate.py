@@ -17,6 +17,40 @@ DB_PATH = ROOT / "sql_inventory_master.db"
 MIGRATIONS_DIR = ROOT / "inventory_app" / "migrations"
 
 
+def _ensure_event_tag_catalog_columns(conn: sqlite3.Connection) -> bool:
+    """
+    Backfill columns for databases that created event_tag_catalog from an older
+    migration variant before governance columns were added.
+
+    Returns True when any ALTER TABLE was applied.
+    """
+    table_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_tag_catalog'"
+    ).fetchone()
+    if not table_exists:
+        return False
+
+    info = conn.execute("PRAGMA table_info(event_tag_catalog)").fetchall()
+    cols = {row[1] for row in info}
+    changed = False
+
+    if "version" not in cols:
+        conn.execute(
+            "ALTER TABLE event_tag_catalog ADD COLUMN version INTEGER NOT NULL DEFAULT 1"
+        )
+        changed = True
+
+    if "created_by" not in cols:
+        conn.execute("ALTER TABLE event_tag_catalog ADD COLUMN created_by TEXT")
+        changed = True
+
+    if "updated_by" not in cols:
+        conn.execute("ALTER TABLE event_tag_catalog ADD COLUMN updated_by TEXT")
+        changed = True
+
+    return changed
+
+
 def main() -> None:
     if not DB_PATH.exists():
         print(f"✗  Database not found: {DB_PATH}")
@@ -61,7 +95,12 @@ def main() -> None:
             print(f"  ✓     {mf.name}")
             applied_any = True
 
-        if applied_any:
+        repaired = _ensure_event_tag_catalog_columns(conn)
+        if repaired:
+            conn.commit()
+            print("  fix   event_tag_catalog missing columns backfilled")
+
+        if applied_any or repaired:
             print(f"\n✓  Migration complete.  DB: {DB_PATH}")
         else:
             print(f"\n✓  All migrations already applied.  DB: {DB_PATH}")

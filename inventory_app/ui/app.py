@@ -942,7 +942,7 @@ def create_app() -> Flask:
 
                 # Audit each changed field.
                 for field, new_value in updates.items():
-                    old_value = old_row.get(field)
+                    old_value = old_row[field]
                     if old_value != new_value:
                         write_audit(
                             conn,
