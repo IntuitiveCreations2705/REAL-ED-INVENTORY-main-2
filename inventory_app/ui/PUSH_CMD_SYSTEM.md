@@ -67,3 +67,63 @@ git push origin revert-YYYY-MM-DD-main
 - Never push unknown staged files.
 - For DB pushes, confirm user accepts binary diff + merge risk.
 - If uncertain, stop and re-run section 1 query.
+
+## 5) Significant-step checkpoint protocol (for congruency + fast rollback)
+
+Use this at each meaningful build milestone so “current NOW” is always recoverable.
+
+### What counts as a significant step?
+- Rule logic change (validation/governance/concurrency/audit)
+- Schema/migration change
+- API contract change
+- UX workflow change affecting save/edit behavior
+- Any fix you may need to quickly revert
+
+### Timing rule
+- Commit at end of each significant step (not only end of day).
+- Create a snapshot tag immediately after push.
+- Update daily checklist note with the checkpoint tag.
+
+### Checkpoint recipe (recommended)
+
+```bash
+git --no-pager status --short
+git add -A
+git commit -m "STEP: <short milestone title>"
+git push origin $(git --no-pager branch --show-current)
+
+# Immutable milestone marker (fast return point)
+git tag -a checkpoint-YYYYMMDD-HHMM-<step> -m "<scope + reason>"
+git push origin checkpoint-YYYYMMDD-HHMM-<step>
+```
+
+### Optional extra safety for risky changes
+
+```bash
+git branch snapshot-YYYYMMDD-HHMM-<step>
+git push origin snapshot-YYYYMMDD-HHMM-<step>
+```
+
+### Quick restore options
+- Inspect checkpoints:
+
+```bash
+git tag --list "checkpoint-*" --sort=-creatordate
+```
+
+- Recreate working branch from checkpoint:
+
+```bash
+git checkout -b restore-<step> checkpoint-YYYYMMDD-HHMM-<step>
+```
+
+- Hard reset current branch to checkpoint (destructive; confirm first):
+
+```bash
+git reset --hard checkpoint-YYYYMMDD-HHMM-<step>
+git push --force-with-lease
+```
+
+### Current NOW marker policy
+- Latest pushed commit on active branch + latest `checkpoint-*` tag = official “NOW”.
+- Do not proceed to next major step until a checkpoint exists.
