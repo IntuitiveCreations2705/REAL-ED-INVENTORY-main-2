@@ -316,6 +316,9 @@ function renderRows() {
       const payload = await res.json();
       if (!res.ok) return setStatus(payload.error || 'Toggle failed', true);
       row.is_active = payload.is_active;
+      row.version = payload.version;
+      row.updated_at = payload.updated_at;
+      row.updated_by = payload.updated_by;
       syncStateBtn(stateBtn, row.is_active);
       setStatus(`Row ${row.row_id} is now ${row.is_active ? 'Active' : 'Inactive'}.`);
     });
@@ -473,6 +476,7 @@ function renderRows() {
             if (!res2.ok) return setStatus(data.error || 'Link failed', true);
             row.item_id = data.item_id;
             row.item_name = data.item_name;
+            row.version = data.version;
             itemNameInput.value = data.item_name;
             tr.querySelector('input[data-field="item_id"]').value = data.item_id;
           }

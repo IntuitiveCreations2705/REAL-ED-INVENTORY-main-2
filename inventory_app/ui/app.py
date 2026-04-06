@@ -8,6 +8,13 @@ from flask import Flask, jsonify, render_template, request, send_file
 
 from audit import write_audit
 from db import DB_PATH, get_conn
+from rules import (
+    as_number as _as_number,
+    computed_order_stock_qty as _computed_order_stock_qty,
+    normalize_location_label,
+    normalize_pipe_tags,
+    parse_pipe_tags,
+)
 from system_map_assets import SOURCE_FILE, ensure_system_map_assets
 
 EDITABLE_FIELDS = {
@@ -25,60 +32,6 @@ EDITABLE_FIELDS = {
     "restock_comments",
     "is_active",
 }
-
-def parse_pipe_tags(raw_tags: str | None) -> list[str]:
-    if not raw_tags:
-        return []
-
-    tokens: list[str] = []
-    for chunk in str(raw_tags).split("|"):
-        tag = chunk.strip()
-        if not tag:
-            continue
-        tokens.append(f"|{tag}|")
-
-    # Preserve order, remove duplicates.
-    return list(dict.fromkeys(tokens))
-
-
-def normalize_pipe_tags(raw_tags: str | None) -> str:
-    """Normalize tag text to canonical pipe format: |TAG1||TAG2| (uppercase)."""
-    if raw_tags is None:
-        return ""
-
-    text = str(raw_tags).strip()
-    if not text:
-        return ""
-
-    # Accept values typed as |NEEDED|, comma-separated, or plain words.
-    chunks: list[str] = []
-    for part in text.replace(",", "|").split("|"):
-        token = part.strip()
-        if not token:
-            continue
-        chunks.append(token.upper())
-
-    unique = list(dict.fromkeys(chunks))
-    return "".join(f"|{tag}|" for tag in unique)
-
-
-def normalize_location_label(raw_value: Any) -> str | None:
-    if raw_value is None:
-        return None
-    text = str(raw_value).strip()
-    if not text:
-        return None
-    return text.upper()
-
-
-def _as_number(value: Any, default: float = 0.0) -> float:
-    if value in (None, ""):
-        return default
-    return float(value)
-
-
-def _computed_order_stock_qty(qty_required: Any, stock_on_hand: Any) -> float:
-    return max(_as_number(qty_required) - _as_number(stock_on_hand), 0.0)
 
 
 def api_error(
