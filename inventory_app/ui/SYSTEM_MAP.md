@@ -59,41 +59,7 @@ flowchart TB
 
 ---
 
-## 3) Critical Interaction: Save Master Row
-
-```mermaid
-sequenceDiagram
-    participant UI as Admin Master UI
-    participant API as Flask app.py
-    participant DB as SQLite
-    participant AUD as audit.py
-
-    UI->>API: PATCH /api/master/{row_id} + payload(version, fields)
-    API->>DB: Read current row/version
-    alt stale version
-        API-->>UI: 409 stale_version
-    else valid
-        opt item_id supplied
-            API->>DB: Validate item_id in item_id_list
-            alt missing
-                API-->>UI: 409 item_id_missing
-            end
-        end
-        API->>DB: UPDATE master_inventory (version + 1, updated_at/by)
-        API->>DB: PRAGMA foreign_key_check
-        alt FK violation
-            API-->>UI: 409 fk_violation
-        else clean
-            API->>AUD: write_audit(...)
-            AUD->>DB: INSERT audit_log row(s)
-            API-->>UI: 200 updated row
-        end
-    end
-```
-
----
-
-## 4) Data Backbone (core relationships)
+## 3) Data Backbone (core relationships)
 
 ```mermaid
 erDiagram
@@ -107,7 +73,7 @@ erDiagram
 
 ---
 
-## 5) Satellites and Their Purpose
+## 4) Satellites and Their Purpose
 
 - **Satellite A:** Master view UI
   - Focus: edit inventory rows, link/unlink items, active/inactive state.
@@ -123,7 +89,7 @@ Think of it as:
 
 ---
 
-## 6) “Where do I look when…” quick guide
+## 5) “Where do I look when…” quick guide
 
 - API behavior: [app.py](app.py)
 - DB connection + pragmas: [db.py](db.py)
