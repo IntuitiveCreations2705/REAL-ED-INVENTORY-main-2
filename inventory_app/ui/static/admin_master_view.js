@@ -12,9 +12,11 @@ const els = {
   rowTemplate: document.getElementById('row-template'),
   statusBar: document.getElementById('status-bar'),
   refreshBtn: document.getElementById('refresh-btn'),
+  addRowBtn: document.getElementById('add-row-btn'),
   viewMode: document.getElementById('view-mode'),
   eventFilter: document.getElementById('event-filter'),
   boxFilter: document.getElementById('box-filter'),
+  boxFilterOptions: document.getElementById('box-filter-options'),
   boxOptions: document.getElementById('box-options'),
   searchItem: document.getElementById('search-item'),
   themeSelect: document.getElementById('theme-select'),
@@ -49,8 +51,40 @@ function wireEvents() {
     await checkHealth();
   });
 
+  if (els.addRowBtn) {
+    els.addRowBtn.addEventListener('click', () => {
+      const blank = {
+        row_id: null,
+        is_new: true,
+        is_active: 1,
+        item_id: null,
+        item_name: null,
+        box_number: null,
+        storage_location: null,
+        event_tags: '',
+        description: '',
+        qty_required: 0,
+        stock_on_hand: 0,
+        qty_flag_limit: null,
+        order_stock_qty: 0,
+        crew_notes: null,
+        restock_comments: null,
+        count_confirmed: 0,
+        version: null,
+      };
+      state.rows.unshift(blank);
+      applyFilters();
+      setStatus('New row added. Link Item first, then complete and Save.');
+    });
+  }
+
   els.viewMode.addEventListener('change', applyFilters);
-  els.boxFilter.addEventListener('input', applyFilters);
+  els.boxFilter.addEventListener('change', applyFilters);
+  els.boxFilter.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    applyFilters();
+  });
   els.eventFilter.addEventListener('change', loadRows);
 
   els.searchItem.addEventListener('input', () => {
@@ -94,7 +128,7 @@ async function loadEvents() {
 
 function applyFilters() {
   const view = els.viewMode.value;
-  const box = els.boxFilter.value.trim().toLowerCase();
+  const box = normalizeBoxValue(els.boxFilter.value);
   const desc = els.searchItem.value.trim().toLowerCase();
 
   state.filteredRows = state.rows.filter((r) => {
@@ -102,7 +136,7 @@ function applyFilters() {
     if (view === 'inactive' && r.is_active !== 0) return false;
     if (view === 'unlinked' && (r.item_id !== null && r.item_id !== '')) return false;
     if (view === 'linked' && (r.item_id === null || r.item_id === '')) return false;
-    if (box && !(r.box_number || '').toLowerCase().includes(box)) return false;
+    if (box && normalizeBoxValue(r.box_number) !== box) return false;
     if (desc && !(r.description || '').toLowerCase().includes(desc)) return false;
     return true;
   });
@@ -157,6 +191,15 @@ function refreshBoxOptions() {
   addNew.value = '__ADD_NEW__';
   addNew.label = 'ADD NEW';
   els.boxOptions.appendChild(addNew);
+
+  if (els.boxFilterOptions) {
+    els.boxFilterOptions.innerHTML = '';
+    for (const box of state.knownBoxes) {
+      const opt = document.createElement('option');
+      opt.value = box;
+      els.boxFilterOptions.appendChild(opt);
+    }
+  }
 }
 
 function refreshLocationOptions() {
@@ -189,16 +232,21 @@ function renderRows() {
     const tr = els.rowTemplate.content.firstElementChild.cloneNode(true);
     tr.dataset.rowId = row.row_id;
 
-    tr.querySelector('.row-id').textContent = row.row_id;
+    tr.querySelector('.row-id').textContent = row.row_id ?? 'NEW';
 
     const linkCell = tr.querySelector('.link-status');
     const isLinked = row.item_id !== null && row.item_id !== '';
     linkCell.innerHTML = isLinked
       ? '<span class="badge badge-linked">&#10003; Linked</span>'
       : '<span class="badge badge-unlinked">&#9679; Unlinked</span>';
+    const saveBtn = tr.querySelector('.save-btn');
+    saveBtn.disabled = !isLinked;
+    saveBtn.title = isLinked ? '' : 'Link item first to unlock Save.';
 
     const stateBtn = tr.querySelector('.state-toggle');
     syncStateBtn(stateBtn, row.is_active);
+    stateBtn.disabled = row.row_id == null;
+    stateBtn.title = row.row_id == null ? 'Save row first to enable State toggle.' : '';
     stateBtn.addEventListener('click', async () => {
       const res = await fetch(`/api/master/${row.row_id}/toggle-active`, { method: 'POST' });
       const payload = await res.json();
@@ -356,6 +404,22 @@ function renderRows() {
         btn.innerHTML = `<strong>${escapeHtml(s.item_name)}</strong><span class="suggestion-meta">${escapeHtml(s.item_id)} · ${escapeHtml(s.status)}</span>`;
         btn.addEventListener('mousedown', async (e) => {
           e.preventDefault();
+          if (row.row_id == null) {
+            row.item_id = s.item_id;
+            row.item_name = s.item_name;
+            itemNameInput.value = s.item_name;
+            tr.querySelector('input[data-field="item_id"]').value = s.item_id;
+            rowSuggestBox.style.display = 'none';
+            rowSuggestBox.innerHTML = '';
+            const localLinkCell = tr.querySelector('.link-status');
+            localLinkCell.innerHTML = '<span class="badge badge-linked">&#10003; Linked</span>';
+            saveBtn.disabled = false;
+            saveBtn.title = '';
+            updateProgress();
+            setStatus('New row linked. Complete required fields and Save.');
+            return;
+          }
+
           const res2 = await fetch(`/api/master/${row.row_id}/link-item`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -371,6 +435,8 @@ function renderRows() {
           rowSuggestBox.innerHTML = '';
           const linkCell = tr.querySelector('.link-status');
           linkCell.innerHTML = '<span class="badge badge-linked">&#10003; Linked</span>';
+          saveBtn.disabled = false;
+          saveBtn.title = '';
           updateProgress();
           setStatus(`Linked row ${row.row_id} → ${s.item_id} / ${s.item_name}`);
           await checkHealth();
@@ -384,7 +450,7 @@ function renderRows() {
       setTimeout(() => { rowSuggestBox.style.display = 'none'; }, 150);
     });
 
-    tr.querySelector('.save-btn').addEventListener('click', async () => {
+    saveBtn.addEventListener('click', async () => {
       const descriptionInput = tr.querySelector('input[data-field="description"]');
       let descriptionValue = stripBrackets(descriptionInput.value || '');
 
@@ -402,7 +468,7 @@ function renderRows() {
         item_name: tr.querySelector('input[data-field="item_name"]').value || null,
         box_number: normalizeBoxValue(tr.querySelector('input[data-field="box_number"]').value) || null,
         storage_location: normalizeLocationValue(tr.querySelector('input[data-field="storage_location"]').value) || null,
-        event_tags: tr.querySelector('input[data-field="event_tags"]').value || null,
+        event_tags: normalizeEventTagsValue(tr.querySelector('input[data-field="event_tags"]').value) || null,
         description: descriptionValue || null,
         qty_required: tr.querySelector('input[data-field="qty_required"]').value || 0,
         stock_on_hand: tr.querySelector('input[data-field="stock_on_hand"]').value || 0,
@@ -412,13 +478,27 @@ function renderRows() {
         restock_comments: tr.querySelector('input[data-field="restock_comments"]').value || null,
       };
 
+      if (!payload.item_id) {
+        tr.classList.add('row-discrepancy');
+        saveBtn.disabled = true;
+        saveBtn.title = 'Link item first to unlock Save.';
+        return setStatus(`Row ${row.row_id}: WARNING unlinked item. SAVE locked until linked.`, true);
+      }
+
+      const missing = getMissingRequiredFields(payload);
+      if (missing.length > 0) {
+        tr.classList.add('row-discrepancy');
+        return setStatus(`Row ${row.row_id}: complete row before save. Missing: ${missing.join(', ')}`, true);
+      }
+
       if (!payload.item_id && payload.item_name) {
         tr.classList.add('row-discrepancy');
         return setStatus(`Row ${row.row_id}: item_name cannot be set without item_id.`, true);
       }
 
-      const res = await fetch(`/api/master/${row.row_id}`, {
-        method: 'PATCH',
+      const isNewRow = row.row_id == null;
+      const res = await fetch(isNewRow ? '/api/master' : `/api/master/${row.row_id}`, {
+        method: isNewRow ? 'POST' : 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
@@ -430,10 +510,10 @@ function renderRows() {
 
       tr.classList.remove('row-discrepancy');
 
-      Object.assign(row, data.row);
+      Object.assign(row, data.row, { is_new: false });
   refreshBoxOptions();
       refreshLocationOptions();
-      setStatus(`Saved row ${row.row_id}.`);
+      setStatus(`${isNewRow ? 'Created' : 'Saved'} row ${row.row_id}.`);
       await checkHealth();
       renderRows();
     });
@@ -486,6 +566,27 @@ function stripBrackets(value) {
     .replace(/[\[\](){}]/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
+}
+
+function getMissingRequiredFields(payload) {
+  const requiredText = [
+    ['item_id', 'Item ID'],
+    ['item_name', 'Item Name'],
+    ['box_number', 'Box'],
+    ['storage_location', 'Location'],
+    ['event_tags', 'Event Tags'],
+    ['description', 'Description'],
+  ];
+
+  const missing = [];
+  for (const [field, label] of requiredText) {
+    if (!String(payload[field] || '').trim()) missing.push(label);
+  }
+
+  if (payload.qty_required === '' || Number.isNaN(Number(payload.qty_required))) missing.push('Qty Req');
+  if (payload.stock_on_hand === '' || Number.isNaN(Number(payload.stock_on_hand))) missing.push('Stock');
+
+  return missing;
 }
 
 function normalizeEventTagTokens(value) {
