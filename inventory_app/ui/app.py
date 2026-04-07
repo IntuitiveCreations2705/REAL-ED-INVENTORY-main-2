@@ -30,6 +30,7 @@ EDITABLE_FIELDS = {
     "crew_notes",
     "qty_required",
     "stock_on_hand",
+    "qty_flag_limit",
     "count_confirmed",
     "order_stock_qty",
     "restock_comments",
@@ -58,8 +59,43 @@ def _changed_by() -> str:
     return request.remote_addr or "system"
 
 
+def _contains_legacy_notinuse(raw_tags: Any) -> bool:
+    return "NOTINUSE" in str(raw_tags or "").upper()
+
+
+def _ensure_qty_flag_limit_column(conn: sqlite3.Connection) -> None:
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(master_inventory)").fetchall()}
+    if "qty_flag_limit" not in cols:
+        conn.execute("ALTER TABLE master_inventory ADD COLUMN qty_flag_limit REAL")
+
+
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="static", template_folder="templates")
+
+    # Legacy remediation: NOTINUSE is deprecated.
+    # Convert |NOTINUSE| → |NEEDED| and set affected rows to Inactive.
+    with get_conn() as cleanup_conn:
+        _ensure_qty_flag_limit_column(cleanup_conn)
+        legacy_rows = cleanup_conn.execute(
+            """
+            SELECT row_id, event_tags
+            FROM master_inventory
+            WHERE UPPER(COALESCE(event_tags, '')) LIKE '%NOTINUSE%'
+            """
+        ).fetchall()
+        for legacy_row in legacy_rows:
+            cleanup_conn.execute(
+                """
+                UPDATE master_inventory
+                   SET event_tags = ?,
+                       is_active = 0,
+                       updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+                       updated_by = 'system',
+                       version = COALESCE(version, 0) + 1
+                 WHERE row_id = ?
+                """,
+                (normalize_pipe_tags(legacy_row["event_tags"]), legacy_row["row_id"]),
+            )
 
     # Ensure generated visual map assets exist for UX/backend introspection.
     system_map_boot_error: str | None = None
@@ -226,6 +262,7 @@ def create_app() -> Flask:
                 m.crew_notes,
                 m.qty_required,
                 m.stock_on_hand,
+                m.qty_flag_limit,
                 m.count_confirmed,
                 m.order_stock_qty,
                 m.restock_comments,
@@ -262,12 +299,22 @@ def create_app() -> Flask:
         fields = {k: v for k, v in payload.items() if k in EDITABLE_FIELDS}
         manual_order_override = bool(payload.get("order_stock_qty_manual_override"))
 
-        event_tags    = normalize_pipe_tags(fields.pop("event_tags", ""))
+        raw_event_tags = fields.pop("event_tags", "")
+        legacy_notinuse = _contains_legacy_notinuse(raw_event_tags)
+        event_tags    = normalize_pipe_tags(raw_event_tags)
         description   = str(fields.pop("description",  "") or "")
         qty_required  = float(fields.pop("qty_required", 0) or 0)
         stock_on_hand = float(fields.pop("stock_on_hand", 0) or 0)
+        qty_flag_limit_raw = fields.pop("qty_flag_limit", None)
+        qty_flag_limit = (
+            float(qty_flag_limit_raw)
+            if qty_flag_limit_raw not in (None, "")
+            else None
+        )
         order_stock_qty = fields.pop("order_stock_qty", None)
         is_active     = int(fields.pop("is_active", 1))
+        if legacy_notinuse:
+            is_active = 0
         item_id       = (fields.pop("item_id", None) or "").strip() or None
         item_name: str | None = None
         final_order_stock_qty = (
@@ -305,10 +352,10 @@ def create_app() -> Flask:
                     INSERT INTO master_inventory
                         (item_id, item_name, box_number, storage_location,
                          event_tags, description, crew_notes,
-                         qty_required, stock_on_hand, order_stock_qty,
+                         qty_required, stock_on_hand, qty_flag_limit, order_stock_qty,
                          restock_comments, is_active,
                          updated_at, updated_by, version)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,
                             strftime('%Y-%m-%dT%H:%M:%SZ','now'),?,1)
                     """,
                     (
@@ -321,6 +368,7 @@ def create_app() -> Flask:
                         fields.get("crew_notes"),
                         qty_required,
                         stock_on_hand,
+                        qty_flag_limit,
                         final_order_stock_qty,
                         fields.get("restock_comments"),
                         is_active,
@@ -373,13 +421,24 @@ def create_app() -> Flask:
                 updates["item_name"] = None
 
         if "event_tags" in updates:
-            updates["event_tags"] = normalize_pipe_tags(updates.get("event_tags"))
+            raw_event_tags = updates.get("event_tags")
+            if _contains_legacy_notinuse(raw_event_tags):
+                updates["is_active"] = 0
+            updates["event_tags"] = normalize_pipe_tags(raw_event_tags)
 
         if "box_number" in updates:
             updates["box_number"] = normalize_box_label(updates.get("box_number"))
 
         if "storage_location" in updates:
             updates["storage_location"] = normalize_location_label(updates.get("storage_location"))
+
+        if "qty_flag_limit" in updates:
+            raw_limit = updates.get("qty_flag_limit")
+            updates["qty_flag_limit"] = (
+                float(raw_limit)
+                if raw_limit not in (None, "")
+                else None
+            )
 
         # ── Validate event_tags against Active catalog ──────────────────────
         if "event_tags" in updates:
@@ -451,7 +510,7 @@ def create_app() -> Flask:
                 # ── Build SET clause ────────────────────────────────────────
                 for field, value in updates.items():
                     assignments.append(f"{field} = ?")
-                    if field in {"qty_required", "stock_on_hand", "order_stock_qty"} and value is not None:
+                    if field in {"qty_required", "stock_on_hand", "order_stock_qty", "qty_flag_limit"} and value is not None:
                         values.append(float(value))
                     elif field == "is_active" and value is not None:
                         values.append(1 if int(value) else 0)

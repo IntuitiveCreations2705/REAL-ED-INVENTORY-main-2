@@ -52,6 +52,31 @@ body {
   color: var(--text);
 }
 
+/* Lighter scrollbar color */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c9d8ff var(--surface);
+}
+
+*::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #c9d8ff;
+  border-radius: 10px;
+  border: 2px solid var(--surface);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #dce7ff;
+}
+
 .app-shell {
   max-width: 1920px;
   width: calc(100vw - 36px);
@@ -110,7 +135,7 @@ body {
 
 .case-rules-summary {
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   font-weight: 400;
 }
 
@@ -418,6 +443,13 @@ tbody tr.row-discrepancy {
   outline: 2px solid var(--off);
   outline-offset: -2px;
   background: rgba(255, 107, 122, 0.14);
+}
+
+/* Manual qty-flag warning rows */
+tbody tr.row-low-stock {
+  outline: 1px solid color-mix(in srgb, #ffd166 75%, var(--border));
+  outline-offset: -1px;
+  background: color-mix(in srgb, #ffd166 18%, transparent);
 }
 
 /* Per-row item_name inline suggestion dropdown */
