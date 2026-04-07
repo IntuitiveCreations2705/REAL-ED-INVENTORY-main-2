@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -37,6 +38,9 @@ EDITABLE_FIELDS = {
     "is_active",
 }
 
+UI_RULE_KEY_ACRONYM_ALLOWLIST = "acronym_allowlist"
+DEFAULT_ACRONYM_ALLOWLIST = ["usb", "xlr", "iec", "rca", "aa", "aaa"]
+
 
 def api_error(
     message: str,
@@ -69,6 +73,89 @@ def _ensure_qty_flag_limit_column(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE master_inventory ADD COLUMN qty_flag_limit REAL")
 
 
+def _normalize_allowlist_tokens(raw_tokens: Any) -> list[str]:
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for token in raw_tokens or []:
+        s = str(token or "").strip().lower()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        normalized.append(s)
+    return normalized
+
+
+def _ensure_ui_rule_settings_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ui_rule_settings (
+            rule_key   TEXT PRIMARY KEY,
+            value_text TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            updated_by TEXT,
+            version    INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+
+    existing = conn.execute(
+        "SELECT rule_key FROM ui_rule_settings WHERE rule_key = ?",
+        (UI_RULE_KEY_ACRONYM_ALLOWLIST,),
+    ).fetchone()
+    if existing is None:
+        conn.execute(
+            """
+            INSERT INTO ui_rule_settings (rule_key, value_text, updated_by, version)
+            VALUES (?, ?, 'system', 1)
+            """,
+            (UI_RULE_KEY_ACRONYM_ALLOWLIST, json.dumps(DEFAULT_ACRONYM_ALLOWLIST)),
+        )
+
+
+def _get_acronym_allowlist_row(conn: sqlite3.Connection) -> sqlite3.Row:
+    _ensure_ui_rule_settings_table(conn)
+    row = conn.execute(
+        """
+        SELECT rule_key, value_text, updated_at, updated_by, version
+        FROM ui_rule_settings
+        WHERE rule_key = ?
+        """,
+        (UI_RULE_KEY_ACRONYM_ALLOWLIST,),
+    ).fetchone()
+    assert row is not None
+    return row
+
+
+def _get_acronym_allowlist_tokens(conn: sqlite3.Connection) -> list[str]:
+    row = _get_acronym_allowlist_row(conn)
+    try:
+        parsed = json.loads(row["value_text"])
+    except Exception:
+        parsed = DEFAULT_ACRONYM_ALLOWLIST
+    tokens = _normalize_allowlist_tokens(parsed)
+    return tokens or DEFAULT_ACRONYM_ALLOWLIST[:]
+
+
+def _set_acronym_allowlist_tokens(
+    conn: sqlite3.Connection,
+    tokens: list[str],
+    changed_by: str,
+) -> sqlite3.Row:
+    _ensure_ui_rule_settings_table(conn)
+    conn.execute(
+        """
+        UPDATE ui_rule_settings
+        SET value_text = ?,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+            updated_by = ?,
+            version = version + 1
+        WHERE rule_key = ?
+        """,
+        (json.dumps(tokens), changed_by, UI_RULE_KEY_ACRONYM_ALLOWLIST),
+    )
+    return _get_acronym_allowlist_row(conn)
+
+
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="static", template_folder="templates")
 
@@ -76,6 +163,7 @@ def create_app() -> Flask:
     # Convert |NOTINUSE| → |NEEDED| and set affected rows to Inactive.
     with get_conn() as cleanup_conn:
         _ensure_qty_flag_limit_column(cleanup_conn)
+        _ensure_ui_rule_settings_table(cleanup_conn)
         legacy_rows = cleanup_conn.execute(
             """
             SELECT row_id, event_tags
@@ -292,6 +380,79 @@ def create_app() -> Flask:
             ).fetchall()
 
         return jsonify([dict(r) for r in rows])
+
+    @app.get("/api/ui-rules/acronym-allowlist")
+    def get_acronym_allowlist() -> Any:
+        with get_conn() as conn:
+            row = _get_acronym_allowlist_row(conn)
+            tokens = _get_acronym_allowlist_tokens(conn)
+        return jsonify(
+            {
+                "tokens": tokens,
+                "updated_at": row["updated_at"],
+                "updated_by": row["updated_by"],
+                "version": row["version"],
+            }
+        )
+
+    @app.put("/api/ui-rules/acronym-allowlist")
+    def update_acronym_allowlist() -> Any:
+        payload = request.get_json(silent=True) or {}
+        tokens = _normalize_allowlist_tokens(payload.get("tokens") or [])
+        if not tokens:
+            return api_error("tokens must contain at least one value.", 400)
+
+        changed_by = _changed_by()
+        with get_conn() as conn:
+            old_tokens = _get_acronym_allowlist_tokens(conn)
+            row = _set_acronym_allowlist_tokens(conn, tokens, changed_by)
+            write_audit(
+                conn,
+                table_name="ui_rule_settings",
+                row_ref=f"rule_key={UI_RULE_KEY_ACRONYM_ALLOWLIST}",
+                action="UPDATE",
+                field_name="value_text",
+                old_value=json.dumps(old_tokens),
+                new_value=json.dumps(tokens),
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
+
+        return jsonify(
+            {
+                "tokens": tokens,
+                "updated_at": row["updated_at"],
+                "updated_by": row["updated_by"],
+                "version": row["version"],
+            }
+        )
+
+    @app.post("/api/ui-rules/acronym-allowlist/reset")
+    def reset_acronym_allowlist() -> Any:
+        changed_by = _changed_by()
+        with get_conn() as conn:
+            old_tokens = _get_acronym_allowlist_tokens(conn)
+            row = _set_acronym_allowlist_tokens(conn, DEFAULT_ACRONYM_ALLOWLIST[:], changed_by)
+            write_audit(
+                conn,
+                table_name="ui_rule_settings",
+                row_ref=f"rule_key={UI_RULE_KEY_ACRONYM_ALLOWLIST}",
+                action="RESET",
+                field_name="value_text",
+                old_value=json.dumps(old_tokens),
+                new_value=json.dumps(DEFAULT_ACRONYM_ALLOWLIST),
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
+
+        return jsonify(
+            {
+                "tokens": DEFAULT_ACRONYM_ALLOWLIST,
+                "updated_at": row["updated_at"],
+                "updated_by": row["updated_by"],
+                "version": row["version"],
+            }
+        )
 
     @app.post("/api/master")
     def insert_master_row() -> Any:

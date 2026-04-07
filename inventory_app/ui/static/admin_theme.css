@@ -156,6 +156,33 @@ body {
   color: var(--text);
 }
 
+.case-allowlist-admin {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  display: grid;
+  gap: 8px;
+}
+
+.case-allowlist-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.case-allowlist-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.case-allowlist-readonly input[readonly] {
+  background: color-mix(in srgb, var(--surface-soft) 70%, var(--bg));
+  color: var(--text);
+  cursor: default;
+}
+
 label { color: var(--muted); font-size: 0.82rem; }
 input, select {
   height: 32px;
@@ -415,6 +442,7 @@ input:disabled, select:disabled {
 
 @media (max-width: 1020px) {
   .controls { grid-template-columns: 1fr; }
+  .case-allowlist-row { grid-template-columns: 1fr; }
 }
 
 /* Progress counter */

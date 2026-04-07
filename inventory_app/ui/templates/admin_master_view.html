@@ -74,6 +74,22 @@
                 <li><strong>Event Tags:</strong> MUST be Typed and stored as uppercase pipe tags like <em>|NEEDED||PIPES|</em>.</li>
                 <li><strong>Measurements:</strong> matched units are normalized on save, for example <em>25 m</em> becomes <em>25m</em>.</li>
               </ul>
+
+              <div class="case-allowlist-admin">
+                <label for="case-allowlist-input">Admin Acronym Allow List (always UPPERCASE)</label>
+                <div class="case-allowlist-row">
+                  <input
+                    id="case-allowlist-input"
+                    type="text"
+                    placeholder="e.g. USB, XLR, IEC, RCA, AA, AAA"
+                  />
+                  <button id="case-allowlist-save-btn" class="btn" type="button">Save List</button>
+                  <button id="case-allowlist-reset-btn" class="btn secondary" type="button">Reset</button>
+                </div>
+                <p class="case-allowlist-help">
+                  Comma-separated tokens. Typos can be corrected and re-saved anytime.
+                </p>
+              </div>
             </div>
           </details>
         </section>
@@ -148,6 +164,6 @@
       </form>
     </dialog>
 
-    <script src="{{ url_for('static', filename='admin_master_view.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='admin_master_view.js') }}"></script>
   </body>
 </html>

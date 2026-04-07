@@ -36,6 +36,24 @@
         </div>
       </section>
 
+      <section class="card case-rules-panel" aria-labelledby="item-list-allowlist-title">
+        <details>
+          <summary>
+            <span id="item-list-allowlist-title">Global Acronym Allow List</span>
+            <span class="case-rules-summary">Read only in this view</span>
+          </summary>
+          <div class="case-rules-content">
+            <div class="case-allowlist-admin case-allowlist-readonly">
+              <label for="readonly-case-allowlist-input">Applied across shared UI rules</label>
+              <input id="readonly-case-allowlist-input" type="text" readonly />
+              <p class="case-allowlist-help">
+                Admin changes are made only in Master Inventory. This view reads and applies the same list but cannot edit it.
+              </p>
+            </div>
+          </div>
+        </details>
+      </section>
+
       <section class="card table-wrap item-list-wrap">
         <table class="item-list-table">
           <thead>
@@ -80,6 +98,6 @@
       </form>
     </dialog>
 
-    <script src="{{ url_for('static', filename='admin_item_list_view.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='admin_item_list_view.js') }}"></script>
   </body>
 </html>

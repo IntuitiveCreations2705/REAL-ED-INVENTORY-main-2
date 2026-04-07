@@ -2,6 +2,8 @@
 
 Reference note for where capitalization rules are enforced in the admin UI and what each rule is intended to do.
 
+See also: [MASTER_RULE_TEMPLATE.md](MASTER_RULE_TEMPLATE.md) for the plain-English design template used before adding new global rules or exceptions.
+
 ## Intent
 - Keep user-facing naming fields readable and consistent.
 - Preserve deliberate all-caps acronyms or special words only when the user confirms they should stay in caps.
@@ -15,10 +17,19 @@ Reference note for where capitalization rules are enforced in the admin UI and w
   - Brackets are stripped before save: `[]`, `()`, `{}` are removed.
   - Saved in Title Case by default.
   - Small joiner words remain lowercase after the first word: `on`, `in`, `and`, `or`, `of`, `the`, `a`, `an`, `to`, `for`, `at`, `by`.
+  - Explicit casing exceptions are preserved:
+    - Acronym terms like `USB`, `XLR`, `IEC`, `RCA`, `AA`, and `AAA` remain uppercase.
+    - Canonical brand words like `iPhone`, `iPad`, `iOS`, and `MacBook` are forced to their standard mixed case.
+  - Single-letter connector/type suffix after an acronym remains uppercase (examples: `USB A`, `IEC 13`).
   - If any ALL-CAPS word is detected, the UI asks once on save whether caps words should remain uppercase.
   - If user selects `Yes`, detected caps words stay uppercase.
   - If user selects `No`, those words are normalized into the normal capitalization rule.
-  - Measurement units are normalized to lowercase with no extra space when matched: `mm`, `cm`, `m`, `km`, `in`, `ft`, `yd`.
+  - Admin allow list is editable in the Master screen (comma-separated list) and persists in DB-backed global settings.
+  - Master Inventory is the only screen that can edit that allow list through the UI.
+  - Allow-list terms are always forced to uppercase (for example: `USB`, `XLR`, `IEC`, `RCA`, `AA`, `AAA`).
+  - Measurement abbreviations are normalized to lowercase: `mm`, `cm`, `m`, `km`, `in`, `ft`, `yd`, `mtr`, `ltr`.
+  - Number + unit is stored with no extra space: `15 Mtr` → `15mtr`, `1 Ltr` → `1ltr`, `25 Cm` → `25cm`.
+  - Standalone abbreviations are also normalized: `Mtr` → `mtr`, `Ltr` → `ltr`, `CM` → `cm`.
 
 - `crew_notes`
   - Uses the same rule set as `description`.
@@ -55,24 +66,27 @@ Reference note for where capitalization rules are enforced in the admin UI and w
   - If the whole item name is entered in ALL CAPS, the UI asks whether to keep ALL CAPS.
   - If user selects `Yes`, the ALL-CAPS name is preserved.
   - If user selects `No`, the value is converted to the standard Title Case rule.
-  - Measurement units are normalized to lowercase with no extra space when matched: `mm`, `cm`, `m`, `km`, `in`, `ft`, `yd`.
+  - Measurement abbreviations are normalized to lowercase: `mm`, `cm`, `m`, `km`, `in`, `ft`, `yd`, `mtr`, `ltr`.
+  - Number + unit is stored with no extra space: `15 Mtr` → `15mtr`, `1 Ltr` → `1ltr`, `25 Cm` → `25cm`.
+  - Standalone abbreviations are also normalized: `Mtr` → `mtr`, `Ltr` → `ltr`, `CM` → `cm`.
+  - The global acronym allow list is read-only in this view and is applied automatically.
+  - This view cannot edit the list.
 
 ## Where applied in code
+- Shared rule source
+  - `static/global_case_rules.js`
+
 - `static/admin_master_view.js`
   - `normalizeDescriptionCase()`
-  - `normalizeCatalogLabel()`
-  - `normalizeLocationLabel()`
   - `normalizeEventTagsValue()`
-  - `normalizeMeasurementText()`
   - `stripBrackets()`
   - `askRequireCaps()`
 
 - `static/admin_item_list_view.js`
-  - `toTitleCaseWithJoiners()`
-  - `normalizeMeasurementText()`
-  - `isAllCapsText()`
   - `askRequireCaps()`
 
 ## Current save prompt behavior
 - In Admin Master Inventory, caps confirmation is asked once per save click when any of `description`, `crew_notes`, or `restock_comments` contains ALL-CAPS words.
+- If `Yes` is selected, typed ALL-CAPS words are preserved in those three fields.
+- If `No` is selected, typed ALL-CAPS words are normalized by the standard case rules.
 - In Item ID List Admin, caps confirmation is asked when `item_name` is entirely ALL CAPS.

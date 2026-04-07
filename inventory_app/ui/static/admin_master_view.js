@@ -1,3 +1,12 @@
+import {
+  formatAllowlistForInput,
+  hasAllCapsWords,
+  loadCaseAllowlist,
+  normalizeDescriptionCase as sharedNormalizeDescriptionCase,
+  resetCaseAllowlist as sharedResetCaseAllowlist,
+  saveCaseAllowlist as sharedSaveCaseAllowlist,
+} from './global_case_rules.js';
+
 const state = {
   rows: [],
   filteredRows: [],
@@ -26,11 +35,15 @@ const els = {
   capsDialog: document.getElementById('caps-dialog'),
   capsYesBtn: document.getElementById('caps-yes-btn'),
   capsNoBtn: document.getElementById('caps-no-btn'),
+  caseAllowlistInput: document.getElementById('case-allowlist-input'),
+  caseAllowlistSaveBtn: document.getElementById('case-allowlist-save-btn'),
+  caseAllowlistResetBtn: document.getElementById('case-allowlist-reset-btn'),
 };
 
 init();
 
 async function init() {
+  await hydrateCaseAllowlistInput();
   initCapsDialog();
   wireEvents();
   await loadEvents();
@@ -94,6 +107,18 @@ function wireEvents() {
   els.themeSelect.addEventListener('change', () => {
     document.documentElement.dataset.theme = els.themeSelect.value;
   });
+
+  if (els.caseAllowlistSaveBtn) {
+    els.caseAllowlistSaveBtn.addEventListener('click', async () => {
+      await saveCaseAllowlistFromInput();
+    });
+  }
+
+  if (els.caseAllowlistResetBtn) {
+    els.caseAllowlistResetBtn.addEventListener('click', async () => {
+      await resetCaseAllowlist();
+    });
+  }
 }
 
 async function loadRows() {
@@ -452,16 +477,27 @@ function renderRows() {
 
     saveBtn.addEventListener('click', async () => {
       const descriptionInput = tr.querySelector('input[data-field="description"]');
-      let descriptionValue = stripBrackets(descriptionInput.value || '');
+      const crewNotesInput = tr.querySelector('input[data-field="crew_notes"]');
+      const restockCommentsInput = tr.querySelector('input[data-field="restock_comments"]');
 
-      if (hasAllCapsWords(descriptionValue)) {
-        const keepCapsWords = await askRequireCaps();
-        descriptionValue = normalizeDescriptionCase(descriptionValue, keepCapsWords);
-        descriptionInput.value = descriptionValue;
-      } else {
-        descriptionValue = normalizeDescriptionCase(descriptionValue, false);
-        descriptionInput.value = descriptionValue;
-      }
+      let descriptionValue = stripBrackets(descriptionInput.value || '');
+      let crewNotesValue = stripBrackets(crewNotesInput.value || '');
+      let restockCommentsValue = stripBrackets(restockCommentsInput.value || '');
+
+      const shouldPromptCaps =
+        hasAllCapsWords(descriptionValue) ||
+        hasAllCapsWords(crewNotesValue) ||
+        hasAllCapsWords(restockCommentsValue);
+
+      const keepCapsWords = shouldPromptCaps ? await askRequireCaps() : false;
+
+      descriptionValue = normalizeDescriptionCase(descriptionValue, keepCapsWords);
+      crewNotesValue = normalizeDescriptionCase(crewNotesValue, keepCapsWords);
+      restockCommentsValue = normalizeDescriptionCase(restockCommentsValue, keepCapsWords);
+
+      descriptionInput.value = descriptionValue;
+      crewNotesInput.value = crewNotesValue;
+      restockCommentsInput.value = restockCommentsValue;
 
       const payload = {
         item_id: tr.querySelector('input[data-field="item_id"]').value || null,
@@ -474,8 +510,8 @@ function renderRows() {
         stock_on_hand: tr.querySelector('input[data-field="stock_on_hand"]').value || 0,
         qty_flag_limit: tr.querySelector('input[data-field="qty_flag_limit"]').value || null,
         order_stock_qty: tr.querySelector('input[data-field="order_stock_qty"]').value || null,
-        crew_notes: tr.querySelector('input[data-field="crew_notes"]').value || null,
-        restock_comments: tr.querySelector('input[data-field="restock_comments"]').value || null,
+        crew_notes: crewNotesValue || null,
+        restock_comments: restockCommentsValue || null,
       };
 
       if (!payload.item_id) {
@@ -523,42 +559,33 @@ function renderRows() {
 }
 
 function normalizeDescriptionCase(value, keepCapsWords) {
-  const s = String(value || '').trim();
-  if (!s) return s;
-
-  const joiners = new Set(['on', 'in', 'and', 'or', 'of', 'the', 'a', 'an', 'to', 'for', 'at', 'by']);
-  const words = s.split(/\s+/);
-
-  return words
-    .map((originalWord, i) => {
-      const letterOnly = originalWord.replace(/[^A-Za-z]/g, '');
-      const isCapsWord = letterOnly.length >= 2 && letterOnly === letterOnly.toUpperCase();
-
-      if (keepCapsWords && isCapsWord) {
-        return originalWord.toUpperCase();
-      }
-
-      const lowerWord = originalWord.toLowerCase();
-      const joinerKey = lowerWord.replace(/[^a-z]/g, '');
-      if (i > 0 && joiners.has(joinerKey)) return lowerWord;
-
-      return capitalizeFirstLetter(lowerWord);
-    })
-    .join(' ');
+  return sharedNormalizeDescriptionCase(value, keepCapsWords);
 }
 
-function hasAllCapsWords(value) {
-  const words = String(value || '').trim().split(/\s+/);
-  return words.some((w) => {
-    const letters = w.replace(/[^A-Za-z]/g, '');
-    return letters.length >= 2 && letters === letters.toUpperCase();
-  });
+async function hydrateCaseAllowlistInput() {
+  if (!els.caseAllowlistInput) return;
+  const tokens = await loadCaseAllowlist();
+  els.caseAllowlistInput.value = formatAllowlistForInput(tokens);
 }
 
-function capitalizeFirstLetter(word) {
-  const idx = word.search(/[a-z]/);
-  if (idx === -1) return word;
-  return word.slice(0, idx) + word.charAt(idx).toUpperCase() + word.slice(idx + 1);
+async function saveCaseAllowlistFromInput() {
+  if (!els.caseAllowlistInput) return;
+  const result = await sharedSaveCaseAllowlist(els.caseAllowlistInput.value);
+  if (!result.ok) {
+    setStatus(result.error, true);
+    return;
+  }
+
+  els.caseAllowlistInput.value = formatAllowlistForInput(result.tokens);
+  setStatus(`Admin allow list saved (${result.tokens.length} term${result.tokens.length === 1 ? '' : 's'}).`);
+}
+
+async function resetCaseAllowlist() {
+  const tokens = await sharedResetCaseAllowlist();
+  if (els.caseAllowlistInput) {
+    els.caseAllowlistInput.value = formatAllowlistForInput(tokens);
+  }
+  setStatus('Admin allow list reset to defaults.');
 }
 
 function stripBrackets(value) {

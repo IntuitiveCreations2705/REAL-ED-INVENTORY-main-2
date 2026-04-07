@@ -1,3 +1,10 @@
+import {
+  formatAllowlistForInput,
+  isAllCapsText,
+  loadCaseAllowlist,
+  toTitleCaseWithJoiners,
+} from './global_case_rules.js';
+
 const state = {
   rows: [],
   nextClientKey: 1,
@@ -11,6 +18,7 @@ const els = {
   addRowBtn: document.getElementById('add-row-btn'),
   searchQ: document.getElementById('search-q'),
   statusFilter: document.getElementById('status-filter'),
+  readonlyCaseAllowlistInput: document.getElementById('readonly-case-allowlist-input'),
   capsDialog: document.getElementById('caps-dialog'),
   capsYesBtn: document.getElementById('caps-yes-btn'),
   capsNoBtn: document.getElementById('caps-no-btn'),
@@ -25,6 +33,7 @@ const REQUIRED_ITEM_LIST_FIELDS = [
 init();
 
 async function init() {
+  await hydrateReadonlyCaseAllowlist();
   initCapsDialog();
   wireEvents();
   await loadRows();
@@ -97,6 +106,13 @@ function wireEvents() {
     renderRows();
     setStatus('New row added. Fill and Save.');
   });
+
+}
+
+async function hydrateReadonlyCaseAllowlist() {
+  if (!els.readonlyCaseAllowlistInput) return;
+  const tokens = await loadCaseAllowlist();
+  els.readonlyCaseAllowlistInput.value = formatAllowlistForInput(tokens);
 }
 
 async function loadRows() {
@@ -274,38 +290,6 @@ function validateItemListRequiredFields(tr, itemName) {
       return rawValue ? null : { field, label };
     })
     .filter(Boolean);
-}
-
-function isAllCapsText(value) {
-  const s = String(value || '').trim();
-  if (!s) return false;
-  const letters = s.replace(/[^A-Za-z]/g, '');
-  if (!letters) return false;
-  return letters === letters.toUpperCase();
-}
-
-function toTitleCaseWithJoiners(value) {
-  const s = String(value || '').trim();
-  if (!s) return s;
-
-  const joiners = new Set(['on', 'in', 'and', 'or', 'of', 'the', 'a', 'an', 'to', 'for', 'at', 'by']);
-  const words = s.toLowerCase().split(/\s+/);
-
-  const titled = words
-    .map((w, i) => {
-      if (i > 0 && joiners.has(w)) return w;
-      return w.charAt(0).toUpperCase() + w.slice(1);
-    })
-    .join(' ');
-
-  return normalizeMeasurementText(titled);
-}
-
-function normalizeMeasurementText(value) {
-  return String(value || '').replace(
-    /\b(\d+(?:\.\d+)?)\s*(mm|cm|m|km|in|ft|yd)\b/gi,
-    (_, num, unit) => `${num}${String(unit).toLowerCase()}`,
-  );
 }
 
 function askRequireCaps() {
