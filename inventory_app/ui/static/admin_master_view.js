@@ -296,6 +296,7 @@ function refreshEventTagOptions() {
       .split('|')
       .map((t) => t.trim().toUpperCase())
       .filter(Boolean)
+      .filter((t) => t !== 'M')
       .filter((t) => t !== 'ALL')),
   )).sort((a, b) => a.localeCompare(b));
 
