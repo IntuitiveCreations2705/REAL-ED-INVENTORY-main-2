@@ -177,6 +177,22 @@ body {
   font-size: 0.82rem;
 }
 
+.event-tags-editor-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.event-tags-editor-row input {
+  flex: 1;
+  min-width: 16rem;
+}
+
+.input-invalid {
+  border-color: #ff6b7c !important;
+  box-shadow: 0 0 0 2px rgba(255, 107, 124, 0.2);
+}
+
 .case-allowlist-readonly input[readonly] {
   background: color-mix(in srgb, var(--surface-soft) 70%, var(--bg));
   color: var(--text);

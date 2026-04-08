@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -40,6 +41,7 @@ EDITABLE_FIELDS = {
 
 UI_RULE_KEY_ACRONYM_ALLOWLIST = "acronym_allowlist"
 DEFAULT_ACRONYM_ALLOWLIST = ["usb", "xlr", "iec", "rca", "aa", "aaa"]
+EVENT_TAG_TOKEN_RE = re.compile(r"^[A-Z0-9_-]+$")
 
 
 def api_error(
@@ -150,6 +152,30 @@ def _set_acronym_allowlist_tokens(
         (json.dumps(tokens), changed_by, UI_RULE_KEY_ACRONYM_ALLOWLIST),
     )
     return _get_acronym_allowlist_row(conn)
+
+
+def _validate_normalized_event_tags_for_event_definition(
+    normalized_tags: str,
+) -> tuple[bool, str | None, list[str]]:
+    tokens = parse_pipe_tags(normalized_tags)
+    if not tokens:
+        return False, "Event tags are required.", []
+
+    invalid_tokens: list[str] = []
+    for token in tokens:
+        tag = token.strip("|")
+        if not EVENT_TAG_TOKEN_RE.fullmatch(tag):
+            invalid_tokens.append(tag)
+
+    if invalid_tokens:
+        msg = (
+            "Invalid tag token(s): "
+            + ", ".join(invalid_tokens)
+            + ". Use uppercase letters, numbers, underscore, or hyphen only."
+        )
+        return False, msg, invalid_tokens
+
+    return True, None, []
 
 
 def create_app() -> Flask:
@@ -279,6 +305,7 @@ def create_app() -> Flask:
         view = request.args.get("view", "all").strip().lower()
         box = request.args.get("box", "").strip().lower()
         event_name = request.args.get("event", "").strip()
+        event_is_specific = bool(event_name)
 
         where = []
         params: list[Any] = []
@@ -292,7 +319,12 @@ def create_app() -> Flask:
             where.append("LOWER(COALESCE(m.box_number, '')) LIKE '%' || ? || '%'")
             params.append(box)
 
-        if event_name and event_name.lower() != "all":
+        # Business rule: when a specific event is selected, default circulation
+        # excludes inactive rows unless user explicitly requests inactive view.
+        if event_is_specific and view == "all":
+            where.append("m.is_active = 1")
+
+        if event_name:
             with get_conn() as conn:
                 event_row = conn.execute(
                     "SELECT tags FROM event_name WHERE event_name = ?",
@@ -354,6 +386,56 @@ def create_app() -> Flask:
             ).fetchall()
 
         return jsonify([dict(r) for r in rows])
+
+    @app.patch("/api/events/<path:event_name>/tags")
+    def update_event_tags(event_name: str) -> Any:
+        payload = request.get_json(silent=True) or {}
+        raw_tags = payload.get("tags")
+        normalized_tags = normalize_pipe_tags(raw_tags)
+
+        is_valid, error_msg, invalid_tokens = _validate_normalized_event_tags_for_event_definition(
+            normalized_tags
+        )
+        if not is_valid:
+            return api_error(
+                error_msg or "Invalid event tags.",
+                422,
+                code="event_tags_invalid",
+                field="tags",
+                invalid_tokens=invalid_tokens,
+            )
+
+        changed_by = _changed_by()
+        with get_conn() as conn:
+            existing = conn.execute(
+                "SELECT event_name, tags FROM event_name WHERE event_name = ?",
+                (event_name,),
+            ).fetchone()
+            if existing is None:
+                return api_error("Event not found.", 404, code="event_not_found")
+
+            conn.execute(
+                "UPDATE event_name SET tags = ? WHERE event_name = ?",
+                (normalized_tags, event_name),
+            )
+            updated = conn.execute(
+                "SELECT event_name, tags FROM event_name WHERE event_name = ?",
+                (event_name,),
+            ).fetchone()
+
+            write_audit(
+                conn,
+                table_name="event_name",
+                row_ref=f"event_name={event_name}",
+                action="UPDATE",
+                field_name="tags",
+                old_value=existing["tags"],
+                new_value=updated["tags"] if updated else normalized_tags,
+                changed_by=changed_by,
+                session_id=str(uuid.uuid4()),
+            )
+
+        return jsonify(dict(updated))
 
     @app.get("/api/ui-rules/acronym-allowlist")
     def get_acronym_allowlist() -> Any:

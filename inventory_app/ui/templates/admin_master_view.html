@@ -49,8 +49,19 @@
           <div class="control small">
             <label for="event-filter">Event</label>
             <select id="event-filter">
-              <option value="">All</option>
+              <option value="">EVERYTHING</option>
             </select>
+          </div>
+
+          <div class="control">
+            <label for="event-tags-editor">Selected Event Tags (Admin)</label>
+            <div class="event-tags-editor-row">
+              <input id="event-tags-editor" type="text" placeholder="|NEEDED||RCP|" />
+              <button id="event-tags-save-btn" class="btn" type="button">Validate + Save</button>
+            </div>
+            <p class="case-allowlist-help">
+              Edit only the selected event definition tags. Save is blocked until tags pass policy validation.
+            </p>
           </div>
 
           <div class="control small">

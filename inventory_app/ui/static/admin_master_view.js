@@ -14,7 +14,11 @@ const state = {
   eventTagChoices: [],
   knownBoxes: [],
   knownLocations: [],
+  events: [],
 };
+
+const SESSION_EVENT_KEY = 'admin.master.event';
+const SESSION_VIEW_KEY = 'admin.master.view';
 
 const els = {
   body: document.getElementById('rows-body'),
@@ -32,6 +36,8 @@ const els = {
   progressCounter: document.getElementById('progress-counter'),
   locationOptions: document.getElementById('location-options'),
   eventTagOptions: document.getElementById('event-tag-options'),
+  eventTagsEditor: document.getElementById('event-tags-editor'),
+  eventTagsSaveBtn: document.getElementById('event-tags-save-btn'),
   capsDialog: document.getElementById('caps-dialog'),
   capsYesBtn: document.getElementById('caps-yes-btn'),
   capsNoBtn: document.getElementById('caps-no-btn'),
@@ -45,6 +51,7 @@ init();
 async function init() {
   await hydrateCaseAllowlistInput();
   initCapsDialog();
+  restoreSessionFilters();
   wireEvents();
   await loadEvents();
   await loadRows();
@@ -60,6 +67,8 @@ function initCapsDialog() {
 
 function wireEvents() {
   els.refreshBtn.addEventListener('click', async () => {
+    els.boxFilter.value = '';
+    els.searchItem.value = '';
     await loadRows();
     await checkHealth();
   });
@@ -91,14 +100,21 @@ function wireEvents() {
     });
   }
 
-  els.viewMode.addEventListener('change', applyFilters);
+  els.viewMode.addEventListener('change', async () => {
+    persistSessionFilters();
+    await loadRows();
+  });
   els.boxFilter.addEventListener('change', applyFilters);
   els.boxFilter.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     applyFilters();
   });
-  els.eventFilter.addEventListener('change', loadRows);
+  els.eventFilter.addEventListener('change', async () => {
+    persistSessionFilters();
+    syncEventTagsEditor();
+    await loadRows();
+  });
 
   els.searchItem.addEventListener('input', () => {
     applyFilters();
@@ -117,6 +133,12 @@ function wireEvents() {
   if (els.caseAllowlistResetBtn) {
     els.caseAllowlistResetBtn.addEventListener('click', async () => {
       await resetCaseAllowlist();
+    });
+  }
+
+  if (els.eventTagsSaveBtn) {
+    els.eventTagsSaveBtn.addEventListener('click', async () => {
+      await validateAndSaveSelectedEventTags();
     });
   }
 }
@@ -141,14 +163,111 @@ async function loadRows() {
 async function loadEvents() {
   const res = await fetch('/api/events');
   const events = await res.json();
+  state.events = Array.isArray(events) ? events : [];
 
-  els.eventFilter.innerHTML = '<option value="">All</option>';
+  const previouslySelected = sessionStorage.getItem(SESSION_EVENT_KEY) || els.eventFilter.value;
+
+  els.eventFilter.innerHTML = '<option value="">EVERYTHING</option>';
   for (const e of events) {
     const opt = document.createElement('option');
     opt.value = e.event_name;
-    opt.textContent = e.event_name;
+    opt.textContent = e.event_name === 'All' ? 'ALL EVENTS' : e.event_name;
     els.eventFilter.appendChild(opt);
   }
+
+  const eventNames = new Set(state.events.map((e) => e.event_name));
+  if (previouslySelected && eventNames.has(previouslySelected)) {
+    els.eventFilter.value = previouslySelected;
+  }
+
+  persistSessionFilters();
+  syncEventTagsEditor();
+}
+
+function restoreSessionFilters() {
+  const savedView = sessionStorage.getItem(SESSION_VIEW_KEY);
+  if (savedView && Array.from(els.viewMode.options).some((o) => o.value === savedView)) {
+    els.viewMode.value = savedView;
+  }
+}
+
+function persistSessionFilters() {
+  sessionStorage.setItem(SESSION_EVENT_KEY, els.eventFilter.value || '');
+  sessionStorage.setItem(SESSION_VIEW_KEY, els.viewMode.value || 'all');
+}
+
+function getSelectedEventDefinition() {
+  const selected = els.eventFilter.value;
+  if (!selected) return null;
+  return state.events.find((e) => e.event_name === selected) || null;
+}
+
+function clearEventTagsInputError() {
+  if (!els.eventTagsEditor) return;
+  els.eventTagsEditor.classList.remove('input-invalid');
+  els.eventTagsEditor.removeAttribute('title');
+}
+
+function setEventTagsInputError(message) {
+  if (!els.eventTagsEditor) return;
+  els.eventTagsEditor.classList.add('input-invalid');
+  els.eventTagsEditor.title = message;
+}
+
+function syncEventTagsEditor() {
+  if (!els.eventTagsEditor || !els.eventTagsSaveBtn) return;
+
+  clearEventTagsInputError();
+  const selectedEvent = getSelectedEventDefinition();
+  if (!selectedEvent) {
+    els.eventTagsEditor.value = '';
+    els.eventTagsEditor.disabled = true;
+    els.eventTagsSaveBtn.disabled = true;
+    return;
+  }
+
+  els.eventTagsEditor.disabled = false;
+  els.eventTagsSaveBtn.disabled = false;
+  els.eventTagsEditor.value = String(selectedEvent.tags || '');
+}
+
+async function validateAndSaveSelectedEventTags() {
+  if (!els.eventTagsEditor || !els.eventTagsSaveBtn) return;
+
+  const selectedEvent = getSelectedEventDefinition();
+  if (!selectedEvent) {
+    setStatus('Select a specific Event before editing tags.', true);
+    return;
+  }
+
+  clearEventTagsInputError();
+  const payload = { tags: els.eventTagsEditor.value };
+
+  const res = await fetch(`/api/events/${encodeURIComponent(selectedEvent.event_name)}/tags`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+
+  if (!res.ok) {
+    const message = data.error || 'Event tags update failed.';
+    if (data.field === 'tags') {
+      setEventTagsInputError(message);
+      els.eventTagsEditor.focus();
+    }
+    setStatus(message, true);
+    return;
+  }
+
+  els.eventTagsEditor.value = String(data.tags || '');
+  const idx = state.events.findIndex((e) => e.event_name === data.event_name);
+  if (idx >= 0) {
+    state.events[idx] = data;
+  }
+  clearEventTagsInputError();
+  setStatus(`Saved tags for ${data.event_name}.`);
+  await loadRows();
 }
 
 function applyFilters() {
@@ -176,7 +295,8 @@ function refreshEventTagOptions() {
     state.rows.flatMap((r) => String(r.event_tags || '')
       .split('|')
       .map((t) => t.trim().toUpperCase())
-      .filter(Boolean)),
+      .filter(Boolean)
+      .filter((t) => t !== 'ALL')),
   )).sort((a, b) => a.localeCompare(b));
 
   state.eventTagChoices = tags;
@@ -395,18 +515,6 @@ function renderRows() {
     }
 
     if (tagsInput) {
-      tagsInput.addEventListener('focus', () => {
-        tagsInput.dataset.prevValue = String(tagsInput.value || '');
-      });
-
-      tagsInput.addEventListener('change', () => {
-        const before = String(tagsInput.dataset.prevValue || row.event_tags || '');
-        const after = String(tagsInput.value || '');
-        const merged = mergeEventTagSelections(before, after);
-        tagsInput.value = merged;
-        row.event_tags = merged;
-      });
-
       tagsInput.addEventListener('blur', () => {
         const normalized = normalizeEventTagsValue(tagsInput.value);
         tagsInput.value = normalized;
@@ -644,10 +752,6 @@ function normalizeEventTagsValue(value) {
   if (!tokens.length) return '';
   if (tokens.includes('ALL')) return '|ALL|';
 
-  if (state.eventTagChoices.length > 0 && state.eventTagChoices.every((tag) => tokens.includes(tag))) {
-    return '|ALL|';
-  }
-
   return tokens.map((t) => `|${t}|`).join('');
 }
 
@@ -657,10 +761,6 @@ function mergeEventTagSelections(beforeValue, afterValue) {
 
   const before = normalizeEventTagTokens(beforeValue).filter((t) => t !== 'ALL');
   const merged = Array.from(new Set([...before, ...selected]));
-
-  if (state.eventTagChoices.length > 0 && state.eventTagChoices.every((tag) => merged.includes(tag))) {
-    return '|ALL|';
-  }
 
   return merged.map((t) => `|${t}|`).join('');
 }
