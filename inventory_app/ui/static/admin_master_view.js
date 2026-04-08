@@ -176,8 +176,7 @@ function refreshEventTagOptions() {
     state.rows.flatMap((r) => String(r.event_tags || '')
       .split('|')
       .map((t) => t.trim().toUpperCase())
-      .filter(Boolean)
-      .filter((t) => t !== 'NOTINUSE')),
+      .filter(Boolean)),
   )).sort((a, b) => a.localeCompare(b));
 
   state.eventTagChoices = tags;
@@ -623,7 +622,6 @@ function normalizeEventTagTokens(value) {
       .split('|')
       .map((part) => part.trim().toUpperCase())
       .filter(Boolean)
-      .map((part) => (part === 'NOTINUSE' ? 'NEEDED' : part))
       .filter((part) => /^[A-Z0-9_\-]+$/.test(part)),
   ));
 }

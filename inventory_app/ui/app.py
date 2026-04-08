@@ -63,10 +63,6 @@ def _changed_by() -> str:
     return request.remote_addr or "system"
 
 
-def _contains_legacy_notinuse(raw_tags: Any) -> bool:
-    return "NOTINUSE" in str(raw_tags or "").upper()
-
-
 def _ensure_qty_flag_limit_column(conn: sqlite3.Connection) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(master_inventory)").fetchall()}
     if "qty_flag_limit" not in cols:
@@ -159,31 +155,9 @@ def _set_acronym_allowlist_tokens(
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="static", template_folder="templates")
 
-    # Legacy remediation: NOTINUSE is deprecated.
-    # Convert |NOTINUSE| → |NEEDED| and set affected rows to Inactive.
     with get_conn() as cleanup_conn:
         _ensure_qty_flag_limit_column(cleanup_conn)
         _ensure_ui_rule_settings_table(cleanup_conn)
-        legacy_rows = cleanup_conn.execute(
-            """
-            SELECT row_id, event_tags
-            FROM master_inventory
-            WHERE UPPER(COALESCE(event_tags, '')) LIKE '%NOTINUSE%'
-            """
-        ).fetchall()
-        for legacy_row in legacy_rows:
-            cleanup_conn.execute(
-                """
-                UPDATE master_inventory
-                   SET event_tags = ?,
-                       is_active = 0,
-                       updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
-                       updated_by = 'system',
-                       version = COALESCE(version, 0) + 1
-                 WHERE row_id = ?
-                """,
-                (normalize_pipe_tags(legacy_row["event_tags"]), legacy_row["row_id"]),
-            )
 
     # Ensure generated visual map assets exist for UX/backend introspection.
     system_map_boot_error: str | None = None
@@ -461,7 +435,6 @@ def create_app() -> Flask:
         manual_order_override = bool(payload.get("order_stock_qty_manual_override"))
 
         raw_event_tags = fields.pop("event_tags", "")
-        legacy_notinuse = _contains_legacy_notinuse(raw_event_tags)
         event_tags    = normalize_pipe_tags(raw_event_tags)
         description   = str(fields.pop("description",  "") or "")
         qty_required  = float(fields.pop("qty_required", 0) or 0)
@@ -474,8 +447,6 @@ def create_app() -> Flask:
         )
         order_stock_qty = fields.pop("order_stock_qty", None)
         is_active     = int(fields.pop("is_active", 1))
-        if legacy_notinuse:
-            is_active = 0
         item_id       = (fields.pop("item_id", None) or "").strip() or None
         item_name: str | None = None
         final_order_stock_qty = (
@@ -583,8 +554,6 @@ def create_app() -> Flask:
 
         if "event_tags" in updates:
             raw_event_tags = updates.get("event_tags")
-            if _contains_legacy_notinuse(raw_event_tags):
-                updates["is_active"] = 0
             updates["event_tags"] = normalize_pipe_tags(raw_event_tags)
 
         if "box_number" in updates:

@@ -39,8 +39,6 @@ def normalize_pipe_tags(raw_tags: str | None) -> str:
         if not token:
             continue
         token_upper = token.upper()
-        if token_upper == "NOTINUSE":
-            token_upper = "NEEDED"
         chunks.append(token_upper)
 
     unique = list(dict.fromkeys(chunks))
