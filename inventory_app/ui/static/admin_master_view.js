@@ -402,7 +402,12 @@ function renderRows() {
 
     for (const input of tr.querySelectorAll('input[data-field]')) {
       const field = input.dataset.field;
-      input.value = row[field] ?? '';
+      if (field === 'crew_notes' && String(row[field] ?? '').trim().toUpperCase() === 'NONE') {
+        input.value = '';
+        row[field] = '';
+      } else {
+        input.value = row[field] ?? '';
+      }
       input.addEventListener('input', () => {
         if (field === 'qty_flag_limit') {
           row[field] = input.value === '' ? null : Number(input.value);
