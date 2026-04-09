@@ -17,6 +17,12 @@ const state = {
   events: [],
 };
 
+// Single dirty-row tracker — only one row may have unsaved edits at a time.
+const dirtyState = {
+  row: null,
+  tr: null,
+};
+
 const SESSION_EVENT_KEY = 'admin.master.event';
 const SESSION_VIEW_KEY = 'admin.master.view';
 
@@ -67,6 +73,7 @@ function initCapsDialog() {
 
 function wireEvents() {
   els.refreshBtn.addEventListener('click', async () => {
+    if (guardDirtyRow()) return;
     els.boxFilter.value = '';
     els.searchItem.value = '';
     await loadRows();
@@ -75,6 +82,7 @@ function wireEvents() {
 
   if (els.addRowBtn) {
     els.addRowBtn.addEventListener('click', () => {
+      if (guardDirtyRow()) return;
       const blank = {
         row_id: null,
         is_new: true,
@@ -101,22 +109,46 @@ function wireEvents() {
   }
 
   els.viewMode.addEventListener('change', async () => {
+    if (guardDirtyRow()) {
+      els.viewMode.value = els.viewMode.dataset.prevValue || els.viewMode.value;
+      return;
+    }
     persistSessionFilters();
     await loadRows();
   });
-  els.boxFilter.addEventListener('change', applyFilters);
+
+  els.viewMode.addEventListener('focus', () => {
+    els.viewMode.dataset.prevValue = els.viewMode.value;
+  });
+
+  els.boxFilter.addEventListener('change', () => {
+    if (guardDirtyRow()) return;
+    applyFilters();
+  });
+
   els.boxFilter.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
+    if (guardDirtyRow()) return;
     applyFilters();
   });
+
+  els.eventFilter.addEventListener('focus', () => {
+    els.eventFilter.dataset.prevValue = els.eventFilter.value;
+  });
+
   els.eventFilter.addEventListener('change', async () => {
+    if (guardDirtyRow()) {
+      els.eventFilter.value = els.eventFilter.dataset.prevValue || els.eventFilter.value;
+      return;
+    }
     persistSessionFilters();
     syncEventTagsEditor();
     await loadRows();
   });
 
   els.searchItem.addEventListener('input', () => {
+    if (guardDirtyRow()) return;
     applyFilters();
   });
 
@@ -393,6 +425,7 @@ function renderRows() {
     stateBtn.disabled = row.row_id == null;
     stateBtn.title = row.row_id == null ? 'Save row first to enable State toggle.' : '';
     stateBtn.addEventListener('click', async () => {
+      if (guardDirtyRow(row)) return;
       const res = await fetch(`/api/master/${row.row_id}/toggle-active`, { method: 'POST' });
       const payload = await res.json();
       if (!res.ok) return setStatus(payload.error || 'Toggle failed', true);
@@ -409,12 +442,20 @@ function renderRows() {
       } else {
         input.value = row[field] ?? '';
       }
+      // Block editing this input if a different row currently has unsaved changes.
+      input.addEventListener('focus', () => {
+        if (guardDirtyRow(row)) {
+          setTimeout(() => input.blur(), 0);
+        }
+      });
       input.addEventListener('input', () => {
         if (field === 'qty_flag_limit') {
           row[field] = input.value === '' ? null : Number(input.value);
+          markRowDirty(row, tr);
           return;
         }
         row[field] = input.type === 'number' ? Number(input.value || 0) : input.value;
+        markRowDirty(row, tr);
       });
     }
 
@@ -660,7 +701,9 @@ function renderRows() {
       tr.classList.remove('row-discrepancy');
 
       Object.assign(row, data.row, { is_new: false });
-  refreshBoxOptions();
+      clearDirtyRow();
+      Object.assign(row, data.row, { is_new: false });
+      refreshBoxOptions();
       refreshLocationOptions();
       setStatus(`${isNewRow ? 'Created' : 'Saved'} row ${row.row_id}.`);
       await checkHealth();
@@ -831,6 +874,64 @@ async function checkHealth() {
   }
 }
 
+// ─── Dirty-Row Management ───────────────────────────────────────────────────
+
+/**
+ * Mark a row as dirty (has unsaved edits).
+ * Adds the .row-dirty class and updates the save button label.
+ */
+function markRowDirty(row, tr) {
+  dirtyState.row = row;
+  dirtyState.tr = tr;
+  tr.classList.add('row-dirty');
+  const saveBtn = tr.querySelector('.save-btn');
+  if (saveBtn && !saveBtn.disabled) {
+    saveBtn.textContent = 'Save \u2731';
+  }
+}
+
+/**
+ * Clear the dirty state after a successful save (or discard).
+ * Removes visual dirty indicators and resets the save button label.
+ */
+function clearDirtyRow() {
+  if (dirtyState.tr) {
+    dirtyState.tr.classList.remove('row-dirty', 'row-dirty-flash');
+    const saveBtn = dirtyState.tr.querySelector('.save-btn');
+    if (saveBtn) saveBtn.textContent = 'Save';
+  }
+  dirtyState.row = null;
+  dirtyState.tr = null;
+}
+
+/**
+ * Briefly flash the dirty row to draw the user's eye to it.
+ */
+function flashDirtyRow() {
+  if (!dirtyState.tr) return;
+  dirtyState.tr.classList.add('row-dirty-flash');
+  setTimeout(() => {
+    if (dirtyState.tr) dirtyState.tr.classList.remove('row-dirty-flash');
+  }, 800);
+}
+
+/**
+ * Guard an action: returns true (blocked) when a dirty row exists that is NOT
+ * the row currently initiating the action.
+ * @param {object|null} callerRow – the row object associated with the action,
+ *   or null for global actions (refresh, add row, filters, etc.).
+ */
+function guardDirtyRow(callerRow = null) {
+  if (!dirtyState.row) return false;
+  if (callerRow && dirtyState.row === callerRow) return false;
+  flashDirtyRow();
+  const label = dirtyState.row.row_id != null ? `Row ${dirtyState.row.row_id}` : 'New Row';
+  setStatus(`\u26A0 ${label} has unsaved changes \u2014 save the row before proceeding.`, true);
+  return true;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+
 function setStatus(message, isError = false) {
   els.statusBar.textContent = message;
   els.statusBar.style.color = isError ? '#ff9aa8' : 'var(--muted)';
@@ -850,3 +951,4 @@ document.addEventListener('click', (e) => {
     document.querySelectorAll('.row-suggestions').forEach((d) => { d.style.display = 'none'; });
   }
 });
+      // Block editing this input if a different row currently has unsaved changes

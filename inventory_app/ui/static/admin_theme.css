@@ -47,7 +47,7 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: var(--font);
-  font-size: 12pt;
+  font-size: 14pt;
   background: var(--bg);
   color: var(--text);
 }
@@ -100,6 +100,26 @@ body {
   gap: 10px;
   padding-top: 2px;
   background: var(--bg);
+}
+
+/* Admin Master view: consistent typography */
+.master-shell,
+.master-shell h1,
+.master-shell p,
+.master-shell label,
+.master-shell input,
+.master-shell select,
+.master-shell button,
+.master-shell thead th,
+.master-shell tbody td,
+.master-shell .status-bar,
+.master-shell .progress-counter,
+.master-shell .badge,
+.master-shell .case-rules-summary,
+.master-shell .case-allowlist-help,
+.master-shell .suggestion-meta,
+.master-shell .caps-dialog-form h3 {
+  font-size: 12pt;
 }
 
 .header { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 14px; }
@@ -394,6 +414,13 @@ thead th {
 tbody td { padding: 5px 6px; border-bottom: 1px solid rgba(255,255,255,0.07); }
 tbody tr:hover { background: rgba(255,255,255,0.03); }
 
+/* Keep all editable controls in table cells at the same size as cell text */
+tbody td input,
+tbody td select,
+tbody td button {
+  font-size: inherit;
+}
+
 /* Compact key columns so full table fits typical 1920 width */
 thead th:nth-child(4),  tbody td:nth-child(4)  { width: 108px; max-width: 108px; } /* Item ID */
 thead th:nth-child(6),  tbody td:nth-child(6)  { width: 72px;  max-width: 72px; }  /* Box */
@@ -519,6 +546,43 @@ tbody tr.row-low-stock {
   outline-offset: -1px;
   background: color-mix(in srgb, #ffd166 18%, transparent);
 }
+
+/* ─── Dirty row — unsaved edits pending ─────────────────────────────────── */
+tbody tr.row-dirty {
+  outline: 2px solid #e76f51;
+  outline-offset: -2px;
+  background: color-mix(in srgb, #e76f51 10%, transparent);
+}
+
+tbody tr.row-dirty .save-btn {
+  background: #f4a261;
+  color: #1a1a1a;
+  font-weight: 700;
+  border-color: #e76f51;
+}
+
+tbody tr.row-dirty .save-btn:hover {
+  background: #e76f51;
+  color: #fff;
+}
+
+/* Flash animation — played when the user tries to leave a dirty row */
+@keyframes dirty-row-flash {
+  0%,
+  100% {
+    outline-color: #e76f51;
+    background-color: color-mix(in srgb, #e76f51 10%, transparent);
+  }
+  40% {
+    outline-color: #d62828;
+    background-color: color-mix(in srgb, #d62828 22%, transparent);
+  }
+}
+
+tbody tr.row-dirty-flash {
+  animation: dirty-row-flash 0.22s ease 0s 3;
+}
+/* ─────────────────────────────────────────────────────────────────────────── */
 
 /* Per-row item_name inline suggestion dropdown */
 .cell-item-name { position: relative; }
