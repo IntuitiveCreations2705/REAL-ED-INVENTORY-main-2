@@ -47,7 +47,7 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: var(--font);
-  font-size: 12pt;
+  font-size: 11pt;
   background: var(--bg);
   color: var(--text);
 }
@@ -119,7 +119,7 @@ body {
 .master-shell .case-allowlist-help,
 .master-shell .suggestion-meta,
 .master-shell .caps-dialog-form h3 {
-  font-size: 12pt;
+  font-size: 11pt;
 }
 
 .header { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 14px; }
@@ -405,7 +405,7 @@ thead th {
   background: var(--surface);
   z-index: 5;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 11pt;
   letter-spacing: 0.03em;
   text-transform: uppercase;
   padding: 8px 7px;
@@ -422,10 +422,10 @@ tbody td button {
 }
 
 /* Compact key columns so full table fits typical 1920 width */
-thead th:nth-child(4),  tbody td:nth-child(4)  { width: 108px; max-width: 108px; } /* Item ID */
+thead th:nth-child(4),  tbody td:nth-child(4)  { width: 8ch; min-width: 8ch; }    /* Item ID */
 thead th:nth-child(6),  tbody td:nth-child(6)  { width: 9ch;  min-width: 9ch; }    /* Box (min width supports 5+ visible chars) */
-thead th:nth-child(7),  tbody td:nth-child(7)  { width: 18ch; min-width: 18ch; }   /* Location */
-thead th:nth-child(8),  tbody td:nth-child(8)  { width: 24ch; min-width: 24ch; }   /* Event Tags */
+thead th:nth-child(7),  tbody td:nth-child(7)  { width: 14ch; min-width: 14ch; }   /* Location */
+thead th:nth-child(8),  tbody td:nth-child(8)  { width: 14ch; min-width: 14ch; }   /* Event Tags */
 thead th:nth-child(10), tbody td:nth-child(10) { width: 82px;  max-width: 82px; }  /* Qty Req */
 thead th:nth-child(11), tbody td:nth-child(11) { width: 82px;  max-width: 82px; }  /* On Hand */
 thead th:nth-child(12), tbody td:nth-child(12) { width: 92px;  max-width: 92px; }  /* Qty Flag Limit */
@@ -453,6 +453,26 @@ tbody td:nth-child(12) input,
 tbody td:nth-child(13) input {
   width: 100%;
   box-sizing: border-box;
+}
+
+tbody td:nth-child(4),
+tbody td:nth-child(8),
+thead th:nth-child(4),
+thead th:nth-child(8) {
+  padding-left: 2pt;
+  padding-right: 2pt;
+}
+
+tbody td:nth-child(4) input,
+tbody td:nth-child(8) input {
+  padding-left: 2pt;
+  padding-right: 2pt;
+}
+
+/* Item ID column body text only: 9pt (header remains 11pt) */
+tbody td:nth-child(4),
+tbody td:nth-child(4) input {
+  font-size: 9pt;
 }
 
 tbody td:nth-child(6) input,
