@@ -168,6 +168,8 @@ export function normalizeDescriptionCase(value, keepCapsWords, options = {}) {
       const lowerLetters = letterOnly.toLowerCase();
       const isCapsWord = letterOnly.length >= 2 && letterOnly === letterOnly.toUpperCase();
       const isSingleLetterWord = letterOnly.length === 1;
+      const hasDigits = /\d/.test(originalWord);
+      const hasUpperLetters = /[A-Z]/.test(originalWord);
       const prevWord = index > 0 ? words[index - 1] : '';
       const prevLettersOnly = prevWord.replace(/[^A-Za-z]/g, '');
       const prevIsCapsAcronym = prevLettersOnly.length >= 2 && prevLettersOnly === prevLettersOnly.toUpperCase();
@@ -192,9 +194,16 @@ export function normalizeDescriptionCase(value, keepCapsWords, options = {}) {
         return originalWord.toUpperCase();
       }
 
+      // Preserve typed uppercase in alphanumeric tokens (e.g. A3, USB2).
+      // This prevents joiner handling from downcasing values like "A3" to "a3".
+      if (hasDigits && hasUpperLetters) {
+        return originalWord;
+      }
+
       const lowerWord = originalWord.toLowerCase();
       const joinerKey = lowerWord.replace(/[^a-z]/g, '');
-      if (index > 0 && JOINERS.has(joinerKey)) return lowerWord;
+      const isPlainAlphaWord = /^[A-Za-z]+$/.test(originalWord);
+      if (index > 0 && isPlainAlphaWord && JOINERS.has(joinerKey)) return lowerWord;
 
       return capitalizeFirstLetter(lowerWord);
     })

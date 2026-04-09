@@ -12,6 +12,7 @@ const state = {
   filteredRows: [],
   suggestions: [],
   eventTagChoices: [],
+  catalogEventTagChoices: [],
   knownBoxes: [],
   knownLocations: [],
   events: [],
@@ -60,6 +61,7 @@ async function init() {
   restoreSessionFilters();
   wireEvents();
   await loadEvents();
+  await loadEventTagCatalog();
   await loadRows();
   await checkHealth();
 }
@@ -214,6 +216,32 @@ async function loadEvents() {
 
   persistSessionFilters();
   syncEventTagsEditor();
+  refreshEventTagOptions();
+}
+
+async function loadEventTagCatalog() {
+  try {
+    const res = await fetch('/api/event-tags');
+    if (!res.ok) {
+      state.catalogEventTagChoices = [];
+      refreshEventTagOptions();
+      return;
+    }
+    const tags = await res.json();
+    state.catalogEventTagChoices = Array.isArray(tags)
+      ? tags
+        .map((t) => {
+          if (typeof t === 'string') return t;
+          if (t && typeof t === 'object' && 'tag_name' in t) return String(t.tag_name || '');
+          return '';
+        })
+        .map((t) => String(t || '').trim().toUpperCase())
+        .filter(Boolean)
+      : [];
+  } catch {
+    state.catalogEventTagChoices = [];
+  }
+  refreshEventTagOptions();
 }
 
 function restoreSessionFilters() {
@@ -323,14 +351,23 @@ function applyFilters() {
 function refreshEventTagOptions() {
   if (!els.eventTagOptions) return;
 
-  const tags = Array.from(new Set(
-    state.rows.flatMap((r) => String(r.event_tags || '')
-      .split('|')
-      .map((t) => t.trim().toUpperCase())
-      .filter(Boolean)
-      .filter((t) => t !== 'M')
-      .filter((t) => t !== 'ALL')),
-  )).sort((a, b) => a.localeCompare(b));
+  const rowTags = state.rows.flatMap((r) => String(r.event_tags || '')
+    .split('|')
+    .map((t) => t.trim().toUpperCase())
+    .filter(Boolean));
+
+  const eventDefinitionTags = state.events.flatMap((e) => String(e.tags || '')
+    .split('|')
+    .map((t) => t.trim().toUpperCase())
+    .filter(Boolean));
+
+  const tags = Array.from(new Set([
+    ...state.catalogEventTagChoices,
+    ...eventDefinitionTags,
+    ...rowTags,
+  ]
+    .filter((t) => t !== 'M')
+    .filter((t) => t !== 'ALL'))).sort((a, b) => a.localeCompare(b));
 
   state.eventTagChoices = tags;
 

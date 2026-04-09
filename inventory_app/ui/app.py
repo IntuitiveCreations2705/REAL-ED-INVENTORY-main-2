@@ -71,6 +71,65 @@ def _ensure_qty_flag_limit_column(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE master_inventory ADD COLUMN qty_flag_limit REAL")
 
 
+def _is_blank_text(value: Any) -> bool:
+    return str(value or "").strip() == ""
+
+
+def _to_float(value: Any, field_name: str) -> tuple[float | None, tuple[Any, int] | None]:
+    if value in (None, ""):
+        return None, None
+    try:
+        return float(value), None
+    except (TypeError, ValueError):
+        return None, api_error(
+            f"{field_name} must be numeric.",
+            422,
+            code="invalid_number",
+            field=field_name,
+        )
+
+
+def _validate_master_required_row_fields(row_values: dict[str, Any]) -> tuple[Any, int] | None:
+    required_text = [
+        ("item_id", "Item ID"),
+        ("item_name", "Item Name"),
+        ("box_number", "Box"),
+        ("storage_location", "Location"),
+        ("event_tags", "Event Tags"),
+        ("description", "Description"),
+    ]
+
+    missing_fields: list[str] = []
+    for field, _label in required_text:
+        if _is_blank_text(row_values.get(field)):
+            missing_fields.append(field)
+
+    for numeric_field in ("qty_required", "stock_on_hand"):
+        value = row_values.get(numeric_field)
+        if value in (None, ""):
+            missing_fields.append(numeric_field)
+            continue
+        try:
+            float(value)
+        except (TypeError, ValueError):
+            return api_error(
+                f"{numeric_field} must be numeric.",
+                422,
+                code="invalid_number",
+                field=numeric_field,
+            )
+
+    if missing_fields:
+        return api_error(
+            "Complete row before save.",
+            422,
+            code="required_fields_missing",
+            missing_fields=missing_fields,
+        )
+
+    return None
+
+
 def _normalize_allowlist_tokens(raw_tokens: Any) -> list[str]:
     seen: set[str] = set()
     normalized: list[str] = []
@@ -517,20 +576,47 @@ def create_app() -> Flask:
         manual_order_override = bool(payload.get("order_stock_qty_manual_override"))
 
         raw_event_tags = fields.pop("event_tags", "")
-        event_tags    = normalize_pipe_tags(raw_event_tags)
-        description   = str(fields.pop("description",  "") or "")
-        qty_required  = float(fields.pop("qty_required", 0) or 0)
-        stock_on_hand = float(fields.pop("stock_on_hand", 0) or 0)
+        event_tags = normalize_pipe_tags(raw_event_tags)
+        description = str(fields.pop("description", "") or "")
+
+        qty_required_raw = fields.pop("qty_required", None)
+        qty_required, qty_required_error = _to_float(qty_required_raw, "qty_required")
+        if qty_required_error:
+            return qty_required_error
+
+        stock_on_hand_raw = fields.pop("stock_on_hand", None)
+        stock_on_hand, stock_on_hand_error = _to_float(stock_on_hand_raw, "stock_on_hand")
+        if stock_on_hand_error:
+            return stock_on_hand_error
+
         qty_flag_limit_raw = fields.pop("qty_flag_limit", None)
-        qty_flag_limit = (
-            float(qty_flag_limit_raw)
-            if qty_flag_limit_raw not in (None, "")
-            else None
-        )
+        qty_flag_limit, qty_flag_limit_error = _to_float(qty_flag_limit_raw, "qty_flag_limit")
+        if qty_flag_limit_error:
+            return qty_flag_limit_error
+
         order_stock_qty = fields.pop("order_stock_qty", None)
-        is_active     = int(fields.pop("is_active", 1))
-        item_id       = (fields.pop("item_id", None) or "").strip() or None
+        is_active = int(fields.pop("is_active", 1))
+        item_id = (fields.pop("item_id", None) or "").strip() or None
         item_name: str | None = None
+
+        normalized_box = normalize_box_label(fields.get("box_number"))
+        normalized_location = normalize_location_label(fields.get("storage_location"))
+
+        required_error = _validate_master_required_row_fields(
+            {
+                "item_id": item_id,
+                "item_name": item_id,
+                "box_number": normalized_box,
+                "storage_location": normalized_location,
+                "event_tags": event_tags,
+                "description": description,
+                "qty_required": qty_required,
+                "stock_on_hand": stock_on_hand,
+            }
+        )
+        if required_error:
+            return required_error
+
         final_order_stock_qty = (
             _as_number(order_stock_qty)
             if manual_order_override and order_stock_qty not in (None, "")
@@ -575,8 +661,8 @@ def create_app() -> Flask:
                     (
                         item_id,
                         item_name,
-                        normalize_box_label(fields.get("box_number")),
-                        normalize_location_label(fields.get("storage_location")),
+                        normalized_box,
+                        normalized_location,
                         event_tags,
                         description,
                         fields.get("crew_notes"),
@@ -646,11 +732,10 @@ def create_app() -> Flask:
 
         if "qty_flag_limit" in updates:
             raw_limit = updates.get("qty_flag_limit")
-            updates["qty_flag_limit"] = (
-                float(raw_limit)
-                if raw_limit not in (None, "")
-                else None
-            )
+            qty_flag_limit, qty_flag_limit_error = _to_float(raw_limit, "qty_flag_limit")
+            if qty_flag_limit_error:
+                return qty_flag_limit_error
+            updates["qty_flag_limit"] = qty_flag_limit
 
         # ── Validate event_tags against Active catalog ──────────────────────
         if "event_tags" in updates:
@@ -709,6 +794,32 @@ def create_app() -> Flask:
                             field="item_id",
                         )
                     updates["item_name"] = ref["item_name"]
+
+                if "qty_required" in updates:
+                    qty_required, qty_required_error = _to_float(updates.get("qty_required"), "qty_required")
+                    if qty_required_error:
+                        return qty_required_error
+                    updates["qty_required"] = qty_required
+
+                if "stock_on_hand" in updates:
+                    stock_on_hand, stock_on_hand_error = _to_float(updates.get("stock_on_hand"), "stock_on_hand")
+                    if stock_on_hand_error:
+                        return stock_on_hand_error
+                    updates["stock_on_hand"] = stock_on_hand
+
+                merged_row = {
+                    "item_id": updates.get("item_id", old_row["item_id"]),
+                    "item_name": updates.get("item_name", old_row["item_name"]),
+                    "box_number": updates.get("box_number", old_row["box_number"]),
+                    "storage_location": updates.get("storage_location", old_row["storage_location"]),
+                    "event_tags": updates.get("event_tags", old_row["event_tags"]),
+                    "description": updates.get("description", old_row["description"]),
+                    "qty_required": updates.get("qty_required", old_row["qty_required"]),
+                    "stock_on_hand": updates.get("stock_on_hand", old_row["stock_on_hand"]),
+                }
+                required_error = _validate_master_required_row_fields(merged_row)
+                if required_error:
+                    return required_error
 
                 next_qty_required = updates.get("qty_required", old_row["qty_required"])
                 next_stock_on_hand = updates.get("stock_on_hand", old_row["stock_on_hand"])
