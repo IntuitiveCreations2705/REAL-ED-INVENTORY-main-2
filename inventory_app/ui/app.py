@@ -40,6 +40,7 @@ EDITABLE_FIELDS = {
 }
 
 UI_RULE_KEY_ACRONYM_ALLOWLIST = "acronym_allowlist"
+UI_RULE_KEY_TEAM_ADMIN_NOTES = "team_admin_notes"
 DEFAULT_ACRONYM_ALLOWLIST = ["usb", "xlr", "iec", "rca", "aa", "aaa"]
 EVENT_TAG_TOKEN_RE = re.compile(r"^[A-Z0-9_-]+$")
 
@@ -168,6 +169,19 @@ def _ensure_ui_rule_settings_table(conn: sqlite3.Connection) -> None:
             (UI_RULE_KEY_ACRONYM_ALLOWLIST, json.dumps(DEFAULT_ACRONYM_ALLOWLIST)),
         )
 
+    existing_team_notes = conn.execute(
+        "SELECT rule_key FROM ui_rule_settings WHERE rule_key = ?",
+        (UI_RULE_KEY_TEAM_ADMIN_NOTES,),
+    ).fetchone()
+    if existing_team_notes is None:
+        conn.execute(
+            """
+            INSERT INTO ui_rule_settings (rule_key, value_text, updated_by, version)
+            VALUES (?, '', 'system', 1)
+            """,
+            (UI_RULE_KEY_TEAM_ADMIN_NOTES,),
+        )
+
 
 def _get_acronym_allowlist_row(conn: sqlite3.Connection) -> sqlite3.Row:
     _ensure_ui_rule_settings_table(conn)
@@ -211,6 +225,40 @@ def _set_acronym_allowlist_tokens(
         (json.dumps(tokens), changed_by, UI_RULE_KEY_ACRONYM_ALLOWLIST),
     )
     return _get_acronym_allowlist_row(conn)
+
+
+def _get_team_admin_notes_row(conn: sqlite3.Connection) -> sqlite3.Row:
+    _ensure_ui_rule_settings_table(conn)
+    row = conn.execute(
+        """
+        SELECT rule_key, value_text, updated_at, updated_by, version
+        FROM ui_rule_settings
+        WHERE rule_key = ?
+        """,
+        (UI_RULE_KEY_TEAM_ADMIN_NOTES,),
+    ).fetchone()
+    assert row is not None
+    return row
+
+
+def _set_team_admin_notes(
+    conn: sqlite3.Connection,
+    notes: str,
+    changed_by: str,
+) -> sqlite3.Row:
+    _ensure_ui_rule_settings_table(conn)
+    conn.execute(
+        """
+        UPDATE ui_rule_settings
+        SET value_text = ?,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+            updated_by = ?,
+            version = version + 1
+        WHERE rule_key = ?
+        """,
+        (notes, changed_by, UI_RULE_KEY_TEAM_ADMIN_NOTES),
+    )
+    return _get_team_admin_notes_row(conn)
 
 
 def _validate_normalized_event_tags_for_event_definition(
@@ -262,6 +310,10 @@ def create_app() -> Flask:
     @app.get("/system-map")
     def system_map_page() -> str:
         return render_template("system_map_view.html")
+
+    @app.get("/event-stock-count")
+    def event_stock_count_page() -> str:
+        return render_template("event_stock_count.html")
 
     @app.get("/api/health")
     def health() -> Any:
@@ -536,6 +588,49 @@ def create_app() -> Flask:
         return jsonify(
             {
                 "tokens": tokens,
+                "updated_at": row["updated_at"],
+                "updated_by": row["updated_by"],
+                "version": row["version"],
+            }
+        )
+
+    @app.get("/api/ui-rules/team-admin-notes")
+    def get_team_admin_notes() -> Any:
+        with get_conn() as conn:
+            row = _get_team_admin_notes_row(conn)
+        return jsonify(
+            {
+                "notes": row["value_text"],
+                "updated_at": row["updated_at"],
+                "updated_by": row["updated_by"],
+                "version": row["version"],
+            }
+        )
+
+    @app.put("/api/ui-rules/team-admin-notes")
+    def update_team_admin_notes() -> Any:
+        payload = request.get_json(silent=True) or {}
+        notes = str(payload.get("notes", "") or "")
+        changed_by = _changed_by()
+
+        with get_conn() as conn:
+            old_row = _get_team_admin_notes_row(conn)
+            row = _set_team_admin_notes(conn, notes, changed_by)
+            write_audit(
+                conn,
+                table_name="ui_rule_settings",
+                row_ref=f"rule_key={UI_RULE_KEY_TEAM_ADMIN_NOTES}",
+                action="UPDATE",
+                field_name="value_text",
+                old_value=old_row["value_text"],
+                new_value=notes,
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
+
+        return jsonify(
+            {
+                "notes": row["value_text"],
                 "updated_at": row["updated_at"],
                 "updated_by": row["updated_by"],
                 "version": row["version"],
@@ -1345,6 +1440,30 @@ def create_app() -> Flask:
             return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
 
         return jsonify({"row": dict(row)})
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Event Stock Count API
+    # ────────────────────────────────────────────────────────────────────────
+
+    @app.get("/api/event-stock-count")
+    def get_event_stock_count() -> Any:
+        """Fetch active inventory rows for stock count summary view.
+        Only returns is_active = 1 rows.
+        """
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                  row_id, item_id, item_name, box_number, storage_location,
+                  event_tags, description, qty_required, stock_on_hand,
+                                    qty_flag_limit, order_stock_qty, crew_notes, restock_comments,
+                                    is_active, version, created_at, updated_at
+                FROM master_inventory
+                WHERE is_active = 1
+                ORDER BY box_number ASC, storage_location ASC, description ASC
+                """
+            ).fetchall()
+        return jsonify([dict(r) for r in rows])
 
     return app
 

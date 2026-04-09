@@ -38,6 +38,8 @@ const els = {
   boxFilter: document.getElementById('box-filter'),
   boxFilterOptions: document.getElementById('box-filter-options'),
   boxOptions: document.getElementById('box-options'),
+  locationFilter: document.getElementById('location-filter'),
+  locationFilterOptions: document.getElementById('location-filter-options'),
   searchItem: document.getElementById('search-item'),
   themeSelect: document.getElementById('theme-select'),
   progressCounter: document.getElementById('progress-counter'),
@@ -77,6 +79,7 @@ function wireEvents() {
   els.refreshBtn.addEventListener('click', async () => {
     if (guardDirtyRow()) return;
     els.boxFilter.value = '';
+    els.locationFilter.value = '';
     els.searchItem.value = '';
     await loadRows();
     await checkHealth();
@@ -129,6 +132,18 @@ function wireEvents() {
   });
 
   els.boxFilter.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (guardDirtyRow()) return;
+    applyFilters();
+  });
+
+  els.locationFilter.addEventListener('change', () => {
+    if (guardDirtyRow()) return;
+    applyFilters();
+  });
+
+  els.locationFilter.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     if (guardDirtyRow()) return;
@@ -333,6 +348,7 @@ async function validateAndSaveSelectedEventTags() {
 function applyFilters() {
   const view = els.viewMode.value;
   const box = normalizeBoxValue(els.boxFilter.value);
+  const location = els.locationFilter.value.trim().toUpperCase();
   const desc = els.searchItem.value.trim().toLowerCase();
 
   state.filteredRows = state.rows.filter((r) => {
@@ -341,6 +357,7 @@ function applyFilters() {
     if (view === 'unlinked' && (r.item_id !== null && r.item_id !== '')) return false;
     if (view === 'linked' && (r.item_id === null || r.item_id === '')) return false;
     if (box && normalizeBoxValue(r.box_number) !== box) return false;
+    if (location && (r.storage_location || '').toUpperCase() !== location) return false;
     if (desc && !(r.description || '').toLowerCase().includes(desc)) return false;
     return true;
   });
@@ -426,11 +443,18 @@ function refreshLocationOptions() {
   )).sort((a, b) => a.localeCompare(b));
 
   els.locationOptions.innerHTML = '';
+  if (els.locationFilterOptions) els.locationFilterOptions.innerHTML = '';
 
   for (const location of state.knownLocations) {
     const opt = document.createElement('option');
     opt.value = location;
     els.locationOptions.appendChild(opt);
+
+    if (els.locationFilterOptions) {
+      const filterOpt = document.createElement('option');
+      filterOpt.value = location;
+      els.locationFilterOptions.appendChild(filterOpt);
+    }
   }
 
   const addNew = document.createElement('option');
