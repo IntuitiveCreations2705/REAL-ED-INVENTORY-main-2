@@ -10,6 +10,8 @@ Integrity-first Admin UI wired directly to `sql_inventory_master.db`.
 - Open [UI_CONTRACT_BASELINE.md](UI_CONTRACT_BASELINE.md) for global UI behavior/appearance contract.
 - Open [DRIFT_RECOVERY_2026-04-10.md](DRIFT_RECOVERY_2026-04-10.md) for recent drift reconstruction notes.
 - Open [GLOBAL_SCENARIO_LOCK.md](GLOBAL_SCENARIO_LOCK.md) for the permanent going-forward enforcement rules.
+- Open [MVP_ACTION_PROCEDURE.md](MVP_ACTION_PROCEDURE.md) for the step-by-step execution playbook for the new build.
+- Open [TIER_ARCHITECTURE_DECISION.md](TIER_ARCHITECTURE_DECISION.md) for the approved multi-tier security/data-protection model.
 
 ## What this baseline does
 - Loads live rows from `master_inventory`

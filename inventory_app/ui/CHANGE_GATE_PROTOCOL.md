@@ -29,6 +29,7 @@ No edits are made until this declaration is shown and acknowledged.
 ## 3) Baseline contract lock
 - Shared baseline for UI/CSS/JS behavior is defined in [UI_CONTRACT_BASELINE.md](UI_CONTRACT_BASELINE.md).
 - If a requested change conflicts with baseline, the conflict must be disclosed before edits.
+- Every requested change must be checked against [MVP_ACTION_PROCEDURE.md](MVP_ACTION_PROCEDURE.md) and approved as coherent, cohesive, congruent, and aligned with MVP.
 
 ## 4) Impact preview before apply
 - Show a concise impact preview:
@@ -59,9 +60,11 @@ Stop and re-confirm before proceeding if any of these occur:
 - Scope lock approved? (Y/N)
 - File lock approved? (Y/N)
 - UI contract deviations approved? (Y/N)
+- MVP alignment confirmed (coherent/cohesive/congruent)? (Y/N)
 - Apply patch now? (Y/N)
 
 ## 9) Mandatory references (do not skip)
 - [GLOBAL_SCENARIO_LOCK.md](GLOBAL_SCENARIO_LOCK.md)
 - [UI_CONTRACT_BASELINE.md](UI_CONTRACT_BASELINE.md)
 - [DRIFT_RECOVERY_2026-04-10.md](DRIFT_RECOVERY_2026-04-10.md)
+- [MVP_ACTION_PROCEDURE.md](MVP_ACTION_PROCEDURE.md)

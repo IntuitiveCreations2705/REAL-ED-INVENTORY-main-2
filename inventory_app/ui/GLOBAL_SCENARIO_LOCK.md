@@ -1,10 +1,11 @@
-# GLOBAL SCENARIO LOCK (Going Forward)
+  0987879# GLOBAL SCENARIO LOCK (Going Forward)
 
 This is the authoritative operating contract for all future UI/app changes.
 
 ## Permanent rule
 - Global CSS/JS/HTML conventions are anchored to Admin Master behavior and shared theme tokens.
 - No silent divergence is allowed across screens.
+- All future updates/modifications must be explicitly validated against MVP alignment.
 
 ## Required execution order for every request
 1. Read [CHANGE_GATE_PROTOCOL.md](CHANGE_GATE_PROTOCOL.md).
@@ -30,6 +31,7 @@ This is the authoritative operating contract for all future UI/app changes.
 - Baseline parity verified? (Y/N)
 - Visible impact approved? (Y/N)
 - Zero-change guarantees approved? (Y/N)
+- MVP coherence/cohesion/congruence confirmed? (Y/N)
 - Apply patch now? (Y/N)
 
 ## Restoration rule
