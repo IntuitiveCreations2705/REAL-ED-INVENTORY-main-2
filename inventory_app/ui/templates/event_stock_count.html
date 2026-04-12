@@ -1,91 +1,100 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Event Stock Count</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='admin_theme.css') }}" />
-  </head>
-  <body>
-    <main class="app-shell stock-count-shell">
-      <div class="sticky-tools">
-        <header class="card header">
-          <div>
-            <h1>Event Stock Count</h1>
-            <p>Active inventory summary by location.</p>
-          </div>
-          <div id="progress-counter" class="progress-counter"></div>
-          <div class="header-actions">
-            <a class="btn secondary btn-link" href="{{ url_for('index') }}">Admin Master</a>
-            <a class="btn secondary btn-link" href="{{ url_for('item_list_page') }}">Item ID List Admin</a>
-            <button id="refresh-btn" class="btn secondary">Refresh</button>
-          </div>
-        </header>
 
-        <section class="card controls">
-          <div class="control">
-            <label for="search-description">Filter by Description</label>
-            <input id="search-description" type="text" placeholder="Type text from description column" />
-          </div>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Event Stock Count</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin_theme.css') }}" />
+</head>
 
-          <div class="control small">
-            <label for="box-filter">Box filter</label>
-            <input id="box-filter" type="text" list="box-filter-options" placeholder="e.g. A-01" />
-          </div>
+<body>
+  <main class="app-shell stock-count-shell">
+    <div class="sticky-tools">
+      <header class="card header">
+        <div>
+          <h1>Event Stock Count</h1>
+          <p>Active inventory summary by location.</p>
+          <!-- [ PHASE 2 RESERVED ] Satellite sync status indicator will be inserted here -->
+          <!-- Use this space for: Last sync time, pending changes count, pull/push button -->
+        </div>
+        <div id="progress-counter" class="progress-counter"></div>
+        <div class="header-actions">
+          <a class="btn secondary btn-link" href="{{ url_for('index') }}">Admin Master</a>
+          <a class="btn secondary btn-link" href="{{ url_for('item_list_page') }}">Item ID List Admin</a>
+          <button id="refresh-btn" class="btn secondary">Refresh</button>
+        </div>
+      </header>
 
-          <div class="control small">
-            <label for="location-filter">Location filter</label>
-            <input id="location-filter" type="text" list="location-filter-options" placeholder="e.g. ZEN ZONE 2" />
-          </div>
+      <section class="card controls">
+        <div class="control">
+          <label for="search-description">Filter by Description</label>
+          <input id="search-description" type="text" placeholder="Type text from description column" />
+        </div>
 
-          <div class="control small">
-            <label for="event-filter">Event</label>
-            <select id="event-filter">
-              <option value="">EVERYTHING</option>
-            </select>
-          </div>
+        <div class="control small">
+          <label for="box-filter">Box filter</label>
+          <input id="box-filter" type="text" list="box-filter-options" placeholder="e.g. A-01" />
+        </div>
 
-          <div class="control small">
-            <label for="theme-filter">Theme</label>
-            <select id="theme-filter">
-              <option value="">EVERYTHING</option>
-            </select>
-          </div>
-        </section>
+        <div class="control small">
+          <label for="location-filter">Location filter</label>
+          <input id="location-filter" type="text" list="location-filter-options" placeholder="e.g. ZEN ZONE 2" />
+        </div>
 
-        <section class="card notes-container">
-          <div class="team-admin-notes">
-            <h3>Team / Admin Notes</h3>
-            <textarea id="team-admin-notes-input" class="team-admin-notes-input" placeholder="Personnel can add notes here to communicate with the team. Changes are saved automatically."></textarea>
-          </div>
-        </section>
-      </div>
+        <div class="control small">
+          <label for="event-filter">Event</label>
+          <select id="event-filter">
+            <option value="">EVERYTHING</option>
+          </select>
+        </div>
 
-      <section class="card table-wrap">
-        <table class="stock-count-table">
-          <thead>
-            <tr>
-              <th>Box</th>
-              <th>Location</th>
-              <th class="col-description">Description</th>
-              <th>Qty Req</th>
-              <th>Stock</th>
-              <th>Qty Flag Limit</th>
-              <th>Order Stock Qty</th>
-              <th>Crew Notes</th>
-              <th>Restock Comments</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody id="rows-body"></tbody>
-        </table>
+        <div class="control small">
+          <label for="theme-filter">Theme</label>
+          <select id="theme-filter">
+            <option value="">EVERYTHING</option>
+          </select>
+        </div>
       </section>
 
-      <footer id="status-bar" class="status-bar">Ready</footer>
-    </main>
+      <section class="card notes-container">
+        <div class="team-admin-notes">
+          <h3>Team / Admin Notes</h3>
+          <textarea id="team-admin-notes-input" class="team-admin-notes-input"
+            placeholder="Personnel can add notes here to communicate with the team. Changes are saved automatically."></textarea>
+        </div>
+      </section>
 
-    <datalist id="box-filter-options"></datalist>
-    <datalist id="location-filter-options"></datalist>
-    <script type="module" src="{{ url_for('static', filename='event_stock_count.js') }}"></script>
-  </body>
+      <!-- [ PHASE 2 RESERVED ] Satellite device scope indicator will be inserted here -->
+      <!-- Use this space for: Device BOX prefix assignment badge, last sync timestamp -->
+    </div>
+
+    <section class="card table-wrap">
+      <table class="stock-count-table">
+        <thead>
+          <tr>
+            <th>Box</th>
+            <th>Location</th>
+            <th class="col-description">Description</th>
+            <th>Qty Req</th>
+            <th>Stock</th>
+            <th>Qty Flag Limit</th>
+            <th>Order Stock Qty</th>
+            <th>Crew Notes</th>
+            <th>Restock Comments</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="rows-body"></tbody>
+      </table>
+    </section>
+
+    <footer id="status-bar" class="status-bar">Ready</footer>
+  </main>
+
+  <datalist id="box-filter-options"></datalist>
+  <datalist id="location-filter-options"></datalist>
+  <script type="module" src="{{ url_for('static', filename='event_stock_count.js') }}"></script>
+</body>
+
 </html>

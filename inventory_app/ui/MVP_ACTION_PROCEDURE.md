@@ -37,9 +37,10 @@ Each screen must include:
 ## 4) Data and sync procedure
 1. Define sync payload schema (versioned)
 2. Define validation pipeline against master DB rules
-3. Define audit fields (`who`, `when`, `source_device`, `change_set`)
+3. Define audit fields (`who`, `when`, `source_device`, `change_set`, `role`, `role_specialization`, `box_prefix`)
 4. Implement manual sync call flow (intranet-capable)
 5. Implement idempotent apply logic for multi-device safety
+6. Phase 2: Add role specialization context to all audit records (Workshop Mentor, Crew Leader, Project Coordinator, Training Coordinator, Scheduling Coordinator, Task Team Leader)
 
 ## 5) Device support verification
 Minimum required viewport validation for:
@@ -47,6 +48,20 @@ Minimum required viewport validation for:
 - 1080p Android tablet class
 
 Verify role workflows at minimum supported viewport before merge.
+
+## 5.1) Phase 2 Role-Specific Validation (Tier 2.2 Leadership)
+Before shipping any Leadership UI:
+1. Verify all six specializations render correctly:
+   - Workshop Mentor: Workshop team scope, crew resource coordination
+   - Crew Leader: Crew assignment workflows, team-specific edits
+   - Project Coordinator: Multi-team inventory view, cross-team visibility
+   - Training Coordinator: Training material scoping, event crew preparation
+   - Scheduling Coordinator: Event timing scope, resource availability alignment
+   - Task Team Leader: Task handoff coordination, team-specific task tracking
+2. Verify Tier 2.4 Facilitator event-scoped window: edits blocked outside active event dates
+3. Verify sync pull button routes to correct Leadership validation tier
+4. Verify role context injected into audit log for all changes
+5. Verify BOX prefix scope restricted per role specialization
 
 ## 6) Change execution standard (per task)
 For each requested change:

@@ -1,6 +1,10 @@
 # Tier Architecture Decision (Data Protection Critical)
 
-Status: **Approved with extended tier/sub-tier structure (12-Apr-2026)**
+Status: **Stage 1 - Dev Inventory System (12-Apr-2026)**
+
+**Project Phase**: Stage 1 - Development and Inventory Foundation  
+**Scope**: Establish core tier structure, BOX prefix framework, and preparation placeholders for future team UIs  
+**Next Phase**: Phase 2 - Leadership & Team UI provisioning (see Phase 2 Roadmap below)
 
 ## Objective
 Establish a secure, scalable, extensible architecture with strong data protection across all areas and support for unlimited role-based UI provisioning.
@@ -41,16 +45,30 @@ Operational admin interface with role-based sub-tiers:
   - Purpose: Master data governance, approval/validation of satellite changes, sync conflict resolution
   - Inherits: Global UI template, Leadership validation controls
 
-- **Tier 2.2 — Leadership Sub-tier**
+- **Tier 2.2 — Leadership Sub-tier** (Multi-role coordinator layer)
   - Access: BOX prefix-restricted edit scope, satellite sync pull approval/validation
-  - Purpose: Approve satellite changes, resolve sync conflicts, manage team-specific data
+  - Purpose: Approve satellite changes, resolve sync conflicts, manage team-specific data, coordinate workflows
   - Edit scope: BOX prefixes assigned to their team(s)
   - Inherits: Global UI template, change validation + audit logging
+  
+  **Tier 2.2 Role Specializations** (configured per user, same UI contract):
+  - **Workshop Mentor**: Workshop Crew / Team Support.
+  - **Crew Leader**: Crew coordination.
+  - **Project Coordinator**: Project-level inventory and milestone tracking
+  - **Training Coordinator**: Event crew training cordination.
+  - **Scheduling Coordinator**: Event timing coordinator.
+  - **Task Team Leader**: Task-specific team management and handoff coordination
 
 - **Tier 2.3 — Management Sub-tier**
   - Access: Read-only to assigned BOX prefixes, reporting/analytics views
   - Purpose: Monitor operations, generate reports, track inventory health
   - Edit scope: None (read-only)
+  - Inherits: Global UI template
+
+- **Tier 2.4 — Facilitator Sub-tier**
+  - Access: Limited edit scope for event-specific setup and configuration
+  - Purpose: Prepare material for events, configure event parameters, manage event-linked data
+  - Edit scope: Event-scoped facilitation data planning and preparation
   - Inherits: Global UI template
 
 All Tier 2 sub-tiers must inherit Global UI template standards.
@@ -130,3 +148,42 @@ All Tier 3 sub-tiers support offline operation with intranet-only sync.
 - Any deviation from this tier model requires explicit contract approval before implementation.
 - BOX prefix assignments managed exclusively by MOM-L2.
 - Device-to-prefix mappings immutable until explicitly revoked by MOM-L2.
+
+## Phase 2 Roadmap (Implementation Gaps Deferred)
+
+The following items are identified as necessary for full production deployment but are deferred to Phase 2 (Leadership & Team UI provisioning):
+
+### Role & Access Control
+- [ ] Role-aware request routing (distinguish Tier 2.1 vs 2.2.* vs 2.3 vs 2.4 access)
+- [ ] Leadership sub-tier role selector in UI (Workshop Mentor, Crew Leader, etc.)
+- [ ] Role context injection in all API requests
+- [ ] Tier 2.4 Facilitator event-scoped window logic (active event detection)
+
+### Audit & Logging Enhancement
+- [ ] Capture `device_id` in all change logs
+- [ ] Capture `role` and `role_specialization` (for Tier 2.2 variants)
+- [ ] Capture `box_prefix` range accessed
+- [ ] Audit trail search/filter by role/device/prefix
+
+### Satellite Sync & Conflict Model
+- [ ] Satellite "PULL" button implementation in Leadership tier
+- [ ] Changed-records-only query optimization (since-last-sync checkpoint)
+- [ ] Conflict detection logic (overlapping BOX ranges flagged)
+- [ ] Leadership approval/merge workflow for incoming satellite changes
+- [ ] Conflict warning dashboard
+
+### Device Isolation & BOX Enforcement
+- [ ] Device registration in MOM-L2 with BOX prefix assignment
+- [ ] Server-side validation: reject edits outside device's allocated BOX range
+- [ ] Non-overlapping edit enforcement per BOX (prevent dual-device conflicts)
+
+### Versioning & Deployment
+- [ ] MOM-L2 app version tracking and push orchestration
+- [ ] Staged rollout by device_id / BOX prefix / role
+- [ ] Version context in API requests for compatibility checks
+
+### Global Template Enhancements
+- [ ] [ **RESERVED** ] Sub-tier role selector section (placeholder in Tier 2 UIs)
+- [ ] [ **RESERVED** ] Satellite sync status indicator (placeholder in Tier 3 UIs)
+- [ ] [ **RESERVED** ] Conflict warning panel (placeholder in status bar)
+- [ ] [ **RESERVED** ] Device/BOX scope indicator badge (placeholder in header)

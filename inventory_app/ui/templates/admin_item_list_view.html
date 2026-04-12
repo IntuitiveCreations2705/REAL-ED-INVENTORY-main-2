@@ -1,103 +1,110 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Admin Item ID List</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='admin_theme.css') }}" />
-  </head>
-  <body>
-    <main class="app-shell item-list-shell">
-      <header class="card header">
-        <div>
-          <h1>Admin Item ID List</h1>
-          <p>Secondary editable table for item keys during development.</p>
-        </div>
-        <div class="header-actions">
-          <a class="btn secondary btn-link" href="{{ url_for('index') }}">Back to Master</a>
-          <a class="btn secondary btn-link" href="{{ url_for('system_map_page') }}" target="_blank" rel="noreferrer">System Map</a>
-          <button id="add-row-btn" class="btn">Add Row</button>
-          <button id="refresh-btn" class="btn secondary">Refresh</button>
-        </div>
-      </header>
 
-      <section class="card controls controls-item-list">
-        <div class="control">
-          <label for="search-q">Search item id / name</label>
-          <input id="search-q" type="text" placeholder="Type to filter" />
-        </div>
-        <div class="control small">
-          <label for="status-filter">Status</label>
-          <select id="status-filter">
-            <option value="all">All</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-        </div>
-      </section>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Item ID List</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin_theme.css') }}" />
+</head>
 
-      <section class="card case-rules-panel" aria-labelledby="item-list-allowlist-title">
-        <details>
-          <summary>
-            <span id="item-list-allowlist-title">Global Acronym Allow List</span>
-            <span class="case-rules-summary">Read only in this view</span>
-          </summary>
-          <div class="case-rules-content">
-            <div class="case-allowlist-admin case-allowlist-readonly">
-              <label for="readonly-case-allowlist-input">Applied across shared UI rules</label>
-              <input id="readonly-case-allowlist-input" type="text" readonly />
-              <p class="case-allowlist-help">
-                Admin changes are made only in Master Inventory. This view reads and applies the same list but cannot edit it.
-              </p>
-            </div>
+<body>
+  <main class="app-shell item-list-shell">
+    <header class="card header">
+      <div>
+        <h1>Admin Item ID List</h1>
+        <p>Secondary editable table for item keys during development.</p>
+        <!-- [ PHASE 2 RESERVED ] Item catalog scope filter will be inserted here -->
+        <!-- Use this space for: Team/role-specific item visibility controls, catalog filtering -->
+      </div>
+      <div class="header-actions">
+        <a class="btn secondary btn-link" href="{{ url_for('index') }}">Back to Master</a>
+        <a class="btn secondary btn-link" href="{{ url_for('system_map_page') }}" target="_blank"
+          rel="noreferrer">System Map</a>
+        <button id="add-row-btn" class="btn">Add Row</button>
+        <button id="refresh-btn" class="btn secondary">Refresh</button>
+      </div>
+    </header>
+
+    <section class="card controls controls-item-list">
+      <div class="control">
+        <label for="search-q">Search item id / name</label>
+        <input id="search-q" type="text" placeholder="Type to filter" />
+      </div>
+      <div class="control small">
+        <label for="status-filter">Status</label>
+        <select id="status-filter">
+          <option value="all">All</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="card case-rules-panel" aria-labelledby="item-list-allowlist-title">
+      <details>
+        <summary>
+          <span id="item-list-allowlist-title">Global Acronym Allow List</span>
+          <span class="case-rules-summary">Read only in this view</span>
+        </summary>
+        <div class="case-rules-content">
+          <div class="case-allowlist-admin case-allowlist-readonly">
+            <label for="readonly-case-allowlist-input">Applied across shared UI rules</label>
+            <input id="readonly-case-allowlist-input" type="text" readonly />
+            <p class="case-allowlist-help">
+              Admin changes are made only in Master Inventory. This view reads and applies the same list but cannot edit
+              it.
+            </p>
           </div>
-        </details>
-      </section>
-
-      <section class="card table-wrap item-list-wrap">
-        <table class="item-list-table">
-          <thead>
-            <tr>
-              <th>Item ID</th>
-              <th>Status</th>
-              <th>Item Name</th>
-              <th>Used In Master</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody id="rows-body"></tbody>
-        </table>
-      </section>
-
-      <footer id="status-bar" class="status-bar">Ready</footer>
-    </main>
-
-    <template id="row-template">
-      <tr>
-        <td><input data-field="item_id" type="text" class="mono" /></td>
-        <td>
-          <select data-field="status">
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-          </select>
-        </td>
-        <td><input data-field="item_name" type="text" /></td>
-        <td class="used-count mono"></td>
-        <td><button class="btn save-btn">Save</button></td>
-      </tr>
-    </template>
-
-    <dialog id="caps-dialog" class="caps-dialog">
-      <form method="dialog" class="caps-dialog-form">
-        <h3>Require Caps?</h3>
-        <p>Item Name is fully uppercase. Keep ALL CAPS?</p>
-        <div class="caps-actions">
-          <button type="button" id="caps-yes-btn" class="btn">Yes</button>
-          <button type="button" id="caps-no-btn" class="btn secondary">No</button>
         </div>
-      </form>
-    </dialog>
+      </details>
+    </section>
 
-    <script type="module" src="{{ url_for('static', filename='admin_item_list_view.js') }}"></script>
-  </body>
+    <section class="card table-wrap item-list-wrap">
+      <table class="item-list-table">
+        <thead>
+          <tr>
+            <th>Item ID</th>
+            <th>Status</th>
+            <th>Item Name</th>
+            <th>Used In Master</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="rows-body"></tbody>
+      </table>
+    </section>
+
+    <footer id="status-bar" class="status-bar">Ready</footer>
+  </main>
+
+  <template id="row-template">
+    <tr>
+      <td><input data-field="item_id" type="text" class="mono" /></td>
+      <td>
+        <select data-field="status">
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+      </td>
+      <td><input data-field="item_name" type="text" /></td>
+      <td class="used-count mono"></td>
+      <td><button class="btn save-btn">Save</button></td>
+    </tr>
+  </template>
+
+  <dialog id="caps-dialog" class="caps-dialog">
+    <form method="dialog" class="caps-dialog-form">
+      <h3>Require Caps?</h3>
+      <p>Item Name is fully uppercase. Keep ALL CAPS?</p>
+      <div class="caps-actions">
+        <button type="button" id="caps-yes-btn" class="btn">Yes</button>
+        <button type="button" id="caps-no-btn" class="btn secondary">No</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="{{ url_for('static', filename='admin_item_list_view.js') }}"></script>
+</body>
+
 </html>
