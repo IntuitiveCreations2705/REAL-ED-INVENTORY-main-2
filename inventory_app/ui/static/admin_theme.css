@@ -56,7 +56,10 @@
   --border: #384042;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -100,7 +103,12 @@ body {
   display: grid;
   gap: 10px;
 }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
 
 .master-shell {
   height: 100vh;
@@ -137,13 +145,42 @@ body {
   font-size: 11pt;
 }
 
-.header { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 14px; }
-.header p { margin: 3px 0 0; color: var(--muted); }
-.header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+}
 
-.controls { padding: 10px; display: grid; grid-template-columns: 1.8fr 1fr 1fr; gap: 8px; }
-.control { display: grid; gap: 5px; position: relative; }
-.control.small { align-content: start; }
+.header p {
+  margin: 3px 0 0;
+  color: var(--muted);
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.controls {
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 1.8fr 1fr 1fr;
+  gap: 8px;
+}
+
+.control {
+  display: grid;
+  gap: 5px;
+  position: relative;
+}
+
+.control.small {
+  align-content: start;
+}
 
 .case-rules-panel {
   padding: 10px 12px;
@@ -234,8 +271,13 @@ body {
   cursor: default;
 }
 
-label { color: var(--muted); font-size: 0.82rem; }
-input, select {
+label {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+input,
+select {
   height: var(--touch-target);
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
@@ -253,11 +295,13 @@ input, select {
   padding: 0 10px;
   cursor: pointer;
 }
+
 .btn.secondary {
   border: 1px solid var(--button-border);
   background: var(--button-bg);
   color: var(--button-text);
 }
+
 .btn:hover {
   background: var(--button-bg-hover);
   color: var(--button-text-hover);
@@ -278,6 +322,7 @@ input, select {
   opacity: 0.82;
   cursor: not-allowed;
 }
+
 .btn-link {
   display: inline-flex;
   align-items: center;
@@ -377,12 +422,45 @@ td input[data-field="restock_comments"]:hover {
   padding: 4px 3px;
 }
 
-.item-list-table th:nth-child(1), .item-list-table td:nth-child(1) { width: 120px; } /* Item ID */
-.item-list-table th:nth-child(2), .item-list-table td:nth-child(2) { width: 120px; text-align: center; } /* Status */
-.item-list-table th:nth-child(3) { width: 480px; text-align: center; } /* Item Name header */
-.item-list-table td:nth-child(3) { width: 480px; text-align: left; }   /* Item Name content */
-.item-list-table th:nth-child(4), .item-list-table td:nth-child(4) { width: 120px; text-align: center; } /* Used */
-.item-list-table th:nth-child(5), .item-list-table td:nth-child(5) { width: 120px; text-align: center; } /* Action */
+.item-list-table th:nth-child(1),
+.item-list-table td:nth-child(1) {
+  width: 120px;
+}
+
+/* Item ID */
+.item-list-table th:nth-child(2),
+.item-list-table td:nth-child(2) {
+  width: 120px;
+  text-align: center;
+}
+
+/* Status */
+.item-list-table th:nth-child(3) {
+  width: 480px;
+  text-align: center;
+}
+
+/* Item Name header */
+.item-list-table td:nth-child(3) {
+  width: 480px;
+  text-align: left;
+}
+
+/* Item Name content */
+.item-list-table th:nth-child(4),
+.item-list-table td:nth-child(4) {
+  width: 120px;
+  text-align: center;
+}
+
+/* Used */
+.item-list-table th:nth-child(5),
+.item-list-table td:nth-child(5) {
+  width: 120px;
+  text-align: center;
+}
+
+/* Action */
 
 .item-list-table td input,
 .item-list-table td select,
@@ -439,7 +517,10 @@ td input[data-field="restock_comments"]:hover {
   z-index: 15;
 }
 
-.cell-item-name { position: relative; }
+.cell-item-name {
+  position: relative;
+}
+
 .row-suggestions {
   display: none;
   position: absolute;
@@ -452,20 +533,29 @@ td input[data-field="restock_comments"]:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   z-index: 20;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
+
 .suggestion-item {
   width: 100%;
   border: 0;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   text-align: left;
   background: transparent;
   color: var(--text);
   padding: 10px;
   cursor: pointer;
 }
-.suggestion-item:hover { background: rgba(79, 140, 255, 0.2); }
-.suggestion-meta { color: var(--muted); font-size: 0.77rem; display: block; }
+
+.suggestion-item:hover {
+  background: rgba(79, 140, 255, 0.2);
+}
+
+.suggestion-meta {
+  color: var(--muted);
+  font-size: 0.77rem;
+  display: block;
+}
 
 /* Description column (expanded to use freed Count Confirmed space) */
 .col-description {
@@ -475,22 +565,37 @@ td input[data-field="restock_comments"]:hover {
   resize: horizontal;
   overflow: hidden;
 }
-.cell-description { overflow: hidden; }
-.cell-description input { width: 100%; box-sizing: border-box; }
+
+.cell-description {
+  overflow: hidden;
+}
+
+.cell-description input {
+  width: 100%;
+  box-sizing: border-box;
+}
 
 .master-shell .table-wrap {
   min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
 }
+
 .stock-count-shell .table-wrap {
   min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
 }
-table { width: 100%; min-width: 1120px; border-collapse: collapse; }
+
+table {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: collapse;
+}
+
 thead th {
-  position: sticky; top: 0;
+  position: sticky;
+  top: 0;
   background: var(--surface);
   z-index: 5;
   color: var(--muted);
@@ -500,8 +605,15 @@ thead th {
   padding: 8px 7px;
   border-bottom: 1px solid var(--border);
 }
-tbody td { padding: 5px 6px; border-bottom: 1px solid rgba(255,255,255,0.07); }
-tbody tr:hover { background: rgba(255,255,255,0.03); }
+
+tbody td {
+  padding: 5px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
 
 /* Keep all editable controls in table cells at the same size as cell text */
 tbody td input,
@@ -511,24 +623,80 @@ tbody td button {
 }
 
 /* Compact key columns so full table fits typical 1920 width */
-thead th:nth-child(4),  tbody td:nth-child(4)  { width: 8ch; min-width: 8ch; }    /* Item ID */
-thead th:nth-child(6),  tbody td:nth-child(6)  { width: 9ch;  min-width: 9ch; }    /* Box (min width supports 5+ visible chars) */
-thead th:nth-child(7),  tbody td:nth-child(7)  { width: 14ch; min-width: 14ch; }   /* Location */
-thead th:nth-child(8),  tbody td:nth-child(8)  { width: 14ch; min-width: 14ch; }   /* Event Tags */
-thead th:nth-child(10), tbody td:nth-child(10) { width: 82px;  max-width: 82px; }  /* Qty Req */
-thead th:nth-child(11), tbody td:nth-child(11) { width: 82px;  max-width: 82px; }  /* On Hand */
-thead th:nth-child(12), tbody td:nth-child(12) { width: 92px;  max-width: 92px; }  /* Qty Flag Limit */
-thead th:nth-child(13), tbody td:nth-child(13) { width: 92px;  max-width: 92px; }  /* Order Stock Qty */
+thead th:nth-child(4),
+tbody td:nth-child(4) {
+  width: 8ch;
+  min-width: 8ch;
+}
+
+/* Item ID */
+thead th:nth-child(6),
+tbody td:nth-child(6) {
+  width: 9ch;
+  min-width: 9ch;
+}
+
+/* Box (min width supports 5+ visible chars) */
+thead th:nth-child(7),
+tbody td:nth-child(7) {
+  width: 14ch;
+  min-width: 14ch;
+}
+
+/* Location */
+thead th:nth-child(8),
+tbody td:nth-child(8) {
+  width: 14ch;
+  min-width: 14ch;
+}
+
+/* Event Tags */
+thead th:nth-child(10),
+tbody td:nth-child(10) {
+  width: 82px;
+  max-width: 82px;
+}
+
+/* Qty Req */
+thead th:nth-child(11),
+tbody td:nth-child(11) {
+  width: 82px;
+  max-width: 82px;
+}
+
+/* On Hand */
+thead th:nth-child(12),
+tbody td:nth-child(12) {
+  width: 92px;
+  max-width: 92px;
+}
+
+/* Qty Flag Limit */
+thead th:nth-child(13),
+tbody td:nth-child(13) {
+  width: 92px;
+  max-width: 92px;
+}
+
+/* Order Stock Qty */
 
 /* Centered content columns */
-thead th:nth-child(1), tbody td:nth-child(1),
-thead th:nth-child(6), tbody td:nth-child(6),
-thead th:nth-child(7), tbody td:nth-child(7),
-thead th:nth-child(8), tbody td:nth-child(8),
-thead th:nth-child(10), tbody td:nth-child(10),
-thead th:nth-child(11), tbody td:nth-child(11),
-thead th:nth-child(12), tbody td:nth-child(12),
-thead th:nth-child(13), tbody td:nth-child(13) {
+thead th:nth-child(1),
+tbody td:nth-child(1),
+thead th:nth-child(6),
+tbody td:nth-child(6),
+thead th:nth-child(7),
+tbody td:nth-child(7),
+thead th:nth-child(8),
+tbody td:nth-child(8),
+thead th:nth-child(10),
+tbody td:nth-child(10),
+thead th:nth-child(11),
+tbody td:nth-child(11),
+thead th:nth-child(12),
+tbody td:nth-child(12),
+thead th:nth-child(13),
+tbody td:nth-child(13) {
   text-align: center;
 }
 
@@ -574,15 +742,33 @@ tbody td:nth-child(13) input {
   text-align: center;
 }
 
-input:disabled, select:disabled {
+input:disabled,
+select:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.mono { font-family: var(--mono); }
-.state-toggle { border: 0; border-radius: 99px; padding: 5px 10px; font-weight: 700; cursor: pointer; }
-.state-active { background: color-mix(in srgb, var(--ok) 80%, #fff); color: #042515; }
-.state-inactive { background: color-mix(in srgb, var(--off) 80%, #fff); color: #3a0f16; }
+.mono {
+  font-family: var(--mono);
+}
+
+.state-toggle {
+  border: 0;
+  border-radius: 99px;
+  padding: 5px 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.state-active {
+  background: color-mix(in srgb, var(--ok) 80%, #fff);
+  color: #042515;
+}
+
+.state-inactive {
+  background: color-mix(in srgb, var(--off) 80%, #fff);
+  color: #3a0f16;
+}
 
 .status-bar {
   border: 1px solid var(--border);
@@ -593,8 +779,13 @@ input:disabled, select:disabled {
 }
 
 @media (max-width: 1020px) {
-  .controls { grid-template-columns: 1fr; }
-  .case-allowlist-row { grid-template-columns: 1fr; }
+  .controls {
+    grid-template-columns: 1fr;
+  }
+
+  .case-allowlist-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 1280px) {
@@ -635,19 +826,37 @@ input:disabled, select:disabled {
   margin-top: 6px;
   font-size: 0.88rem;
 }
-.prog-linked  { color: var(--ok); font-weight: 700; }
-.prog-unlinked { color: var(--off); font-weight: 700; }
-.prog-sep, .prog-pct { color: var(--muted); }
-.prog-pct { font-size: 1rem; font-weight: 700; }
+
+.prog-linked {
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.prog-unlinked {
+  color: var(--off);
+  font-weight: 700;
+}
+
+.prog-sep,
+.prog-pct {
+  color: var(--muted);
+}
+
+.prog-pct {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
 .prog-bar {
   flex: 1;
   min-width: 120px;
   max-width: 260px;
   height: 8px;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 99px;
   overflow: hidden;
 }
+
 .prog-fill {
   height: 100%;
   background: var(--ok);
@@ -663,8 +872,16 @@ input:disabled, select:disabled {
   font-weight: 700;
   white-space: nowrap;
 }
-.badge-linked   { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
-.badge-unlinked { background: color-mix(in srgb, var(--off) 20%, transparent); color: var(--off); }
+
+.badge-linked {
+  background: color-mix(in srgb, var(--ok) 20%, transparent);
+  color: var(--ok);
+}
+
+.badge-unlinked {
+  background: color-mix(in srgb, var(--off) 20%, transparent);
+  color: var(--off);
+}
 
 .stock-count-table {
   width: 100%;
@@ -958,11 +1175,13 @@ tbody tr.row-dirty .save-btn:hover {
 
 /* Flash animation — played when the user tries to leave a dirty row */
 @keyframes dirty-row-flash {
+
   0%,
   100% {
     outline-color: #e76f51;
     background-color: color-mix(in srgb, #e76f51 10%, transparent);
   }
+
   40% {
     outline-color: #d62828;
     background-color: color-mix(in srgb, #d62828 22%, transparent);
@@ -972,10 +1191,14 @@ tbody tr.row-dirty .save-btn:hover {
 tbody tr.row-dirty-flash {
   animation: dirty-row-flash 0.22s ease 0s 3;
 }
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 
 /* Per-row item_name inline suggestion dropdown */
-.cell-item-name { position: relative; }
+.cell-item-name {
+  position: relative;
+}
+
 .row-suggestions {
   display: none;
   position: absolute;
@@ -988,7 +1211,7 @@ tbody tr.row-dirty-flash {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   z-index: 20;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
 }
 
 .caps-dialog {
