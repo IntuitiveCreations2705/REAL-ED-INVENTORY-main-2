@@ -520,6 +520,38 @@ function renderRows() {
       });
     }
 
+    // Set up hover expansion for crew_notes and restock_comments
+    const crewNotesInput = tr.querySelector('input[data-field="crew_notes"]');
+    const restockCommentsInput = tr.querySelector('input[data-field="restock_comments"]');
+
+    [crewNotesInput, restockCommentsInput].forEach((input) => {
+      if (!input) return;
+      const field = input.dataset.field;
+      const hoverCard = input.parentElement.querySelector('.hover-card');
+
+      // Show full text in hover card on mouseenter
+      input.addEventListener('mouseenter', () => {
+        if (input.value) {
+          hoverCard.textContent = input.value;
+          hoverCard.classList.add('active');
+        }
+      });
+
+      // Hide hover card on mouseleave
+      input.addEventListener('mouseleave', () => {
+        hoverCard.classList.remove('active');
+      });
+
+      // Click to edit - must save to proceed
+      input.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (guardDirtyRow(row)) return;
+        hoverCard.classList.remove('active');
+        showTextEditModal(input, row, field, tr);
+      });
+    });
+
     // Per-row item_name inline suggestion
     const itemNameInput = tr.querySelector('input[data-field="item_name"]');
     const boxInput = tr.querySelector('input[data-field="box_number"]');
@@ -989,6 +1021,153 @@ function guardDirtyRow(callerRow = null) {
   const label = dirtyState.row.row_id != null ? `Row ${dirtyState.row.row_id}` : 'New Row';
   setStatus(`\u26A0 ${label} has unsaved changes \u2014 save the row before proceeding.`, true);
   return true;
+}
+
+/**
+ * Show text edit modal for crew_notes or restock_comments fields.
+ * Changes must be saved in the row - no proceed without save.
+ */
+function showTextEditModal(inputElement, row, fieldName, tr) {
+  const currentValue = inputElement.value || '';
+  
+  // Create backdrop
+  const backdrop = document.createElement('div');
+  backdrop.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  `;
+  
+  // Create modal
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    background: var(--surface);
+    border: 1px solid var(--primary);
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 520px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  `;
+  
+  // Title
+  const title = document.createElement('h3');
+  title.textContent = fieldName === 'crew_notes' ? 'Edit Notes' : 'Edit Restock Comments';
+  title.style.cssText = 'margin: 0 0 12px 0; color: var(--text); font-size: 1.1rem;';
+  
+  // Help text
+  const helpText = document.createElement('p');
+  helpText.style.cssText = 'margin: 0 0 10px 0; font-size: 0.85rem; color: var(--muted);';
+  helpText.textContent = 'Maximum 200 characters. You must SAVE the row to proceed.';
+  
+  // Textarea
+  const textarea = document.createElement('textarea');
+  textarea.value = currentValue;
+  textarea.maxLength = 200;
+  textarea.style.cssText = `
+    width: 100%;
+    min-height: 140px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-soft);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    resize: vertical;
+    margin-bottom: 12px;
+    box-sizing: border-box;
+    font-family: inherit;
+  `;
+  
+  // Character counter
+  const charCountDiv = document.createElement('div');
+  charCountDiv.style.cssText = 'margin-bottom: 16px; font-size: 0.8rem; color: var(--muted); text-align: right;';
+  const charSpan = document.createElement('span');
+  charSpan.textContent = currentValue.length;
+  charCountDiv.appendChild(charSpan);
+  charCountDiv.appendChild(document.createTextNode('/200'));
+  
+  textarea.addEventListener('input', () => {
+    charSpan.textContent = textarea.value.length;
+  });
+  
+  textarea.addEventListener('focus', () => {
+    textarea.style.borderColor = 'var(--primary)';
+    textarea.style.boxShadow = '0 0 0 2px rgba(79, 140, 255, 0.22)';
+  });
+  
+  textarea.addEventListener('blur', () => {
+    textarea.style.borderColor = 'var(--border)';
+    textarea.style.boxShadow = 'none';
+  });
+  
+  // Button container
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.cssText = 'display: flex; gap: 8px; justify-content: flex-end;';
+  
+  // Cancel button
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.className = 'btn secondary';
+  cancelBtn.style.cssText = 'cursor: pointer;';
+  cancelBtn.onclick = () => {
+    backdrop.remove();
+  };
+  
+  // Save button - marks row dirty
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Update & Mark for Save';
+  saveBtn.className = 'btn';
+  saveBtn.style.cssText = 'cursor: pointer;';
+  saveBtn.onclick = () => {
+    inputElement.value = textarea.value;
+    row[fieldName] = textarea.value;
+    backdrop.remove();
+    markRowDirty(row, tr);
+    setStatus(`${fieldName === 'crew_notes' ? 'Notes' : 'Restock Comments'} updated. Click Save button in row to persist.`);
+  };
+  
+  buttonContainer.appendChild(cancelBtn);
+  buttonContainer.appendChild(saveBtn);
+  
+  // Assemble modal
+  modal.appendChild(title);
+  modal.appendChild(helpText);
+  modal.appendChild(textarea);
+  modal.appendChild(charCountDiv);
+  modal.appendChild(buttonContainer);
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  
+  // Auto-focus textarea
+  textarea.focus();
+  textarea.select();
+  
+  // Close on Escape
+  const onEscape = (e) => {
+    if (e.key === 'Escape') {
+      backdrop.remove();
+      document.removeEventListener('keydown', onEscape);
+    }
+  };
+  document.addEventListener('keydown', onEscape);
+  
+  // Close on backdrop click
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) {
+      backdrop.remove();
+      document.removeEventListener('keydown', onEscape);
+    }
+  });
 }
 
 // ────────────────────────────────────────────────────────────────────────────

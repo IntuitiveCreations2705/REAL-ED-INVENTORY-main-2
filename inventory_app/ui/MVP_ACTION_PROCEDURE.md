@@ -42,6 +42,18 @@ Each screen must include:
 5. Implement idempotent apply logic for multi-device safety
 6. Phase 2: Add role specialization context to all audit records (Workshop Mentor, Crew Leader, Project Coordinator, Training Coordinator, Scheduling Coordinator, Task Team Leader)
 
+## 4.1) ItemID Format Standard (Global Constraint)
+**Format**: `{PREFIX}-{4DIGITS}` (example: `Hi-0001`)
+- **Prefix**: Two-character facility/location code (e.g., `Hi` = High School)
+- **Digits**: 4-digit numeric suffix (zero-padded, range `0001`–`9999`)
+- **Examples**: `Hi-0001`, `Hi-0042`, `Hi-9999`, `Pr-0001`, `Gs-0055`
+- **Immutability**: ItemID cannot be changed once created. It is the foundational reference for all validation, sync, audit trails, and conflict resolution.
+- **Uniqueness**: Each item must have a unique ItemID. No duplicate item_ids allowed across the database.
+- **Constraint Application**: Enforced at DB level (unique constraint on `item_id` column).
+- **Phase 2 ItemID Reference Strategy**: All allocation strategies ultimately reference item_id for correctness validation.
+
+**Historical Note**: Earlier format was `{PREFIX}-{6DIGITS}` (e.g., `Hi-000001`). Transition to 4-digit format (Hi-0001) reduces collision risk and improves readability. All new ItemIDs must use 4-digit format moving forward.
+
 ## 5) Device support verification
 Minimum required viewport validation for:
 - iPad / large tablet class

@@ -284,6 +284,51 @@ input, select {
   text-decoration: none;
 }
 
+/* Expandable text fields for crew_notes and restock_comments */
+td input[data-field="crew_notes"],
+td input[data-field="restock_comments"] {
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  position: relative;
+}
+
+td input[data-field="crew_notes"]:hover,
+td input[data-field="restock_comments"]:hover {
+  background: color-mix(in srgb, var(--surface-soft) 130%, var(--surface));
+}
+
+/* Hover expansion card - shown when .hover-card-active class is present */
+.hover-card {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: var(--surface);
+  border: 1px solid var(--primary);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  padding: 8px;
+  min-width: 200px;
+  max-width: 400px;
+  white-space: normal;
+  word-break: break-word;
+  z-index: 20;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--text);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.hover-card.active {
+  display: block;
+}
+
 .controls-item-list {
   grid-template-columns: 2fr 1fr;
 }

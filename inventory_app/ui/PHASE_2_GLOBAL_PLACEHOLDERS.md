@@ -200,6 +200,41 @@ function debugRoleContext() // Log current context + allocation
 
 ---
 
+## ITEM_ID_REFERENCE Strategy (Phase 2 — Deferred)
+
+**Status**: TODO — Implementation deferred pending manual DB cleanup
+
+**Format Standard**: 
+- **Format**: `{PREFIX}-{4DIGITS}` (example: `Hi-0001`)
+- **Prefix**: Two uppercase letters (facility/location code)
+- **Digits**: 4-digit numeric suffix, zero-padded (range `0001`–`9999`)
+- **Examples**: `Hi-0001`, `Pr-0042`, `Gs-9999`
+
+**Immutability Contract**:
+- Item_id is immutable after creation (no updates allowed)
+- Item_id is globally unique across the database
+- Item_id is the foundational reference for all validation, sync, audit trails, and conflict resolution
+- Server enforces uniqueness constraint and prevents modification attempts
+
+**Implementation Goal** (Phase 2):
+- Make item_id the primary key for all allocation strategy validation
+- Use item_id as the stable reference across all device sync operations
+- Include item_id context in all audit log entries
+- Reference item_id (not item_name) for all data integrity checks
+
+**Prerequisite DB Cleanup**:
+Before Phase 2 implementation can proceed, the database must be cleaned of:
+- Duplicate item_ids (consolidate into single unique item_id per item)
+- NULL or invalid item_id values
+- Items with item_ids that don't match the new format (Hi-0001 pattern)
+
+**Migration Path** (pending approval):
+- Existing items with 6-digit format (`Hi-000001`) can remain as-is (backward compatible)
+- All new item creation must use 4-digit format (`Hi-0001`)
+- Phase 2b will include bulk migration script if large-scale conversion needed
+
+---
+
 ## Phase 2 Implementation Checklist
 
 ### Multi-Strategy Allocation Framework
@@ -208,6 +243,7 @@ function debugRoleContext() // Log current context + allocation
 - [ ] Implement team_context allocation (organizational units)
 - [ ] Implement location_scope filtering (storage location-based)
 - [ ] Implement device_id allocation (non-overlapping satellite sync)
+- [ ] **TODO Phase 2b**: Activate ITEM_ID_REFERENCE strategy (after DB cleanup)
 - [ ] Wire custom_patterns registration (extensibility for future teams)
 
 ### For Leadership Sub-tier UIs:

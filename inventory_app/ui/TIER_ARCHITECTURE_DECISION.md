@@ -109,6 +109,17 @@ All Tier 3 sub-tiers support offline operation with intranet-only sync.
 - Idempotent sync apply behavior.
 - Encrypted transport and secure credential handling.
 
+## ItemID Format Standard (Global Immutable Reference)
+- **Format**: `{PREFIX}-{4DIGITS}` (example: `Hi-0001`)
+- **Prefix**: Two-character facility/location code (e.g., `Hi` = High School, `Pr` = Primary, `Gs` = General Store)
+- **Digits**: 4-digit numeric suffix (zero-padded, range `0001`–`9999`)
+- **Examples**: `Hi-0001`, `Hi-0042`, `Hi-9999`, `Pr-0001`, `Gs-0055`
+- **Immutability**: ItemID is the foundational reference for all validation, sync, audit trails, and conflict resolution. Cannot be changed once created.
+- **Uniqueness**: Enforced at DB level (unique constraint on `item_id` column). No duplicate item_ids allowed.
+- **Constraint Enforcement**: Server-side validation rejects attempts to modify item_id; rejects duplicate values on insert.
+- **Allocation Strategy**: Phase 2 ITEM_ID_REFERENCE strategy will use this as the primary key for all data integrity checks (currently deferred pending DB cleanup).
+- **Migration Note**: Historical format was `{PREFIX}-{6DIGITS}` (e.g., `Hi-000001`). All new ItemIDs must use 4-digit format (Hi-0001) moving forward. Database migration pending for legacy items.
+
 ## Sync & Satellite Model
 - **Sync initiation**: Button-pull only (satellite initiates, never auto-syncs).
 - **Data scope**: Changed records only since last sync checkpoint.

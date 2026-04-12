@@ -90,3 +90,27 @@ See also: [MASTER_RULE_TEMPLATE.md](MASTER_RULE_TEMPLATE.md) for the plain-Engli
 - If `Yes` is selected, typed ALL-CAPS words are preserved in those three fields.
 - If `No` is selected, typed ALL-CAPS words are normalized by the standard case rules.
 - In Item ID List Admin, caps confirmation is asked when `item_name` is entirely ALL CAPS.
+
+## ItemID Format Constraint
+
+### Item ID Format Rule
+- **Format**: `{PREFIX}-{4DIGITS}` (example: `Hi-0001`)
+- **Prefix**: Two uppercase letters representing facility/location (e.g., `Hi`, `Pr`, `Gs`)
+- **Separator**: Single hyphen `-` between prefix and digits
+- **Digits**: Exactly 4 digits, zero-padded (range `0001` to `9999`)
+- **Enforcement**: Database-level constraint (unique on item_id column)
+- **Examples Valid**: `Hi-0001`, `Pr-0042`, `Gs-9999`
+- **Examples Invalid**: `Hi-1`, `hi-0001` (lowercase), `Hi-00001` (5 digits), `Hi_0001` (underscore)
+
+### ItemID Immutability Rule
+- **Immutable**: Item_id cannot be modified after creation
+- **Unique**: No two items can share the same item_id
+- **Reference**: All sync operations, audit trails, and validation logic reference item_id as the authoritative item identifier
+- **Constraint Enforcement**: Server rejects any attempt to change item_id; duplicate values rejected on insert
+- **History**: Previous 6-digit format (`Hi-000001`) is being phased out. All new items use 4-digit format (`Hi-0001`).
+
+### Where Applied in Code
+- `app.py` — API validation on `item_id` format and immutability
+- `db.py` — Database schema enforces unique constraint and prevents updates
+- `static/admin_item_list_view.js` — UI displays item_id as read-only (no edit field)
+- `static/admin_master_view.js` — Item linking uses item_id as the stable reference key

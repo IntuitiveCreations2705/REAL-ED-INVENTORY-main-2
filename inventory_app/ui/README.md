@@ -21,6 +21,14 @@ Integrity-first Admin UI wired directly to `sql_inventory_master.db`.
 - Commits link by click to selected suggestion
 - Toggles active/inactive (`is_active`) without deletions
 - Runs health check including `PRAGMA foreign_key_check`
+- **ItemID Format**: All items use format `{PREFIX}-{4DIGITS}` (example: `Hi-0001`). ItemID is immutable and unique per database.
+
+## ItemID Format Reference
+- **Format**: `Hi-0001`, `Pr-0042`, `Gs-9999` (two-character prefix + four-digit numeric suffix)
+- **Prefix Examples**: `Hi` (High School), `Pr` (Primary), `Gs` (General Store)
+- **Immutable**: Once created, ItemID cannot be changed. It is the foundational reference for all validation, sync, and audit trails.
+- **Unique**: Each item must have a unique ItemID. Database enforces uniqueness constraint.
+- **Migration Context**: Previous format was `Hi-000001` (6 digits). All new items use the 4-digit format (Hi-0001) moving forward.
 
 ## Files
 - `app.py` — Flask backend + API
