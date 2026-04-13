@@ -55,6 +55,60 @@ const els = {
   caseAllowlistResetBtn: document.getElementById('case-allowlist-reset-btn'),
 };
 
+// Used to detect when input text is visually truncated (so we only show hover expansion when needed).
+const _truncateCanvas = document.createElement('canvas');
+const _truncateCtx = _truncateCanvas.getContext('2d');
+
+function _buildFontShorthand(style) {
+  // Prefer computed `font` when available; otherwise synthesize a shorthand.
+  if (style.font && style.font !== '') return style.font;
+  const fontStyle = style.fontStyle || 'normal';
+  const fontVariant = style.fontVariant || 'normal';
+  const fontWeight = style.fontWeight || 'normal';
+  const fontSize = style.fontSize || '16px';
+  const lineHeight = style.lineHeight || 'normal';
+  const fontFamily = style.fontFamily || 'sans-serif';
+  return `${fontStyle} ${fontVariant} ${fontWeight} ${fontSize}/${lineHeight} ${fontFamily}`;
+}
+
+function isInputTextTruncated(input) {
+  if (!input || !_truncateCtx) return false;
+  const value = String(input.value || '');
+  if (!value) return false;
+
+  // Most reliable for <input type="text">: if it can scroll horizontally, text is clipped.
+  const previousScrollLeft = input.scrollLeft;
+  input.scrollLeft = 0;
+  input.scrollLeft = 1_000_000;
+  const maxScrollLeft = input.scrollLeft;
+  input.scrollLeft = previousScrollLeft;
+  if (maxScrollLeft > 0) return true;
+
+  const style = window.getComputedStyle(input);
+  _truncateCtx.font = _buildFontShorthand(style);
+
+  let textWidth = _truncateCtx.measureText(value).width;
+
+  // Account for letter-spacing approximately.
+  const letterSpacing = Number.parseFloat(style.letterSpacing);
+  if (!Number.isNaN(letterSpacing) && value.length > 1) {
+    textWidth += letterSpacing * (value.length - 1);
+  }
+
+  const paddingLeft = Number.parseFloat(style.paddingLeft) || 0;
+  const paddingRight = Number.parseFloat(style.paddingRight) || 0;
+
+  // clientWidth includes padding but not borders. Subtract padding to estimate usable text area.
+  const available = Math.max(0, input.clientWidth - paddingLeft - paddingRight);
+  if (textWidth > available + 1) return true;
+
+  // Fallback heuristic for browsers where canvas measurement can under-report form-control text rendering.
+  const fontSize = Number.parseFloat(style.fontSize) || 14;
+  const approxCharWidth = fontSize * 0.55;
+  const approxWidth = value.length * approxCharWidth;
+  return approxWidth > available + 1;
+}
+
 init();
 
 async function init() {
@@ -528,8 +582,8 @@ function renderRows() {
       if (!input) return;
       const field = input.dataset.field;
       const hoverCard = input.parentElement.querySelector('.hover-card');
+      if (!hoverCard) return;
 
-      // Show full text in hover card on mouseenter
       input.addEventListener('mouseenter', () => {
         if (input.value) {
           hoverCard.textContent = input.value;
@@ -537,12 +591,11 @@ function renderRows() {
         }
       });
 
-      // Hide hover card on mouseleave
       input.addEventListener('mouseleave', () => {
         hoverCard.classList.remove('active');
       });
 
-      // Click to edit - must save to proceed
+      // Click to edit modal; row still must be saved to persist.
       input.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -550,6 +603,40 @@ function renderRows() {
         hoverCard.classList.remove('active');
         showTextEditModal(input, row, field, tr);
       });
+    });
+
+    // Set up hover expansion for description and item_name (only if text is truncated)
+    const descInput = tr.querySelector('input[data-field="description"]');
+    const itemNameInputHover = tr.querySelector('input[data-field="item_name"]');
+
+    [descInput, itemNameInputHover].forEach((input) => {
+      if (!input) return;
+      const cell = input.parentElement;
+      const hoverCard = cell ? cell.querySelector('.hover-card') : null;
+      if (!hoverCard) return;
+
+      const showIfTruncated = () => {
+        const field = input.dataset.field;
+        const isDescription = field === 'description';
+        // Description fallback: some browsers under-detect clipping in text inputs.
+        const shouldShow = isInputTextTruncated(input)
+          || (isDescription && String(input.value || '').length > 24);
+
+        if (shouldShow) {
+          hoverCard.textContent = input.value;
+          hoverCard.classList.add('active');
+        }
+      };
+
+      const hide = () => {
+        hoverCard.classList.remove('active');
+      };
+
+      // Trigger when hovering the input or its containing cell.
+      input.addEventListener('mouseenter', showIfTruncated);
+      input.addEventListener('mouseleave', hide);
+      cell.addEventListener('mouseenter', showIfTruncated);
+      cell.addEventListener('mouseleave', hide);
     });
 
     // Per-row item_name inline suggestion

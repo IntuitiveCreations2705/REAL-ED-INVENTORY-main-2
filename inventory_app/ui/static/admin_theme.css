@@ -567,7 +567,7 @@ td input[data-field="restock_comments"]:hover {
 }
 
 .cell-description {
-  overflow: hidden;
+  overflow: visible;
 }
 
 .cell-description input {
