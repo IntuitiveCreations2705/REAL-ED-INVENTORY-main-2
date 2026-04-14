@@ -115,7 +115,22 @@ body {
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
+.stock-count-shell {
+  height: 100vh;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
 .master-shell .sticky-tools {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: grid;
+  gap: 10px;
+  padding-top: 2px;
+  background: var(--bg);
+}
+
+.stock-count-shell .sticky-tools {
   position: sticky;
   top: 0;
   z-index: 30;
@@ -1225,6 +1240,55 @@ tbody tr.row-dirty-flash {
 
 .caps-dialog::backdrop {
   background: rgba(0, 0, 0, 0.45);
+}
+
+/* ── Global table data-state rows (loading / error / empty) ─────────────── */
+.table-state {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.table-state--loading {
+  color: var(--muted);
+  animation: pulse-muted 1.4s ease-in-out infinite;
+}
+
+.table-state--error {
+  color: var(--off);
+}
+
+.table-state--empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.table-state-icon {
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 1.1rem;
+}
+
+.table-state-msg {
+  margin-right: 12px;
+}
+
+.table-state-retry {
+  margin-top: 8px;
+  vertical-align: middle;
+}
+
+@keyframes pulse-muted {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
+  }
 }
 
 .caps-dialog-form {

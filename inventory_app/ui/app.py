@@ -72,6 +72,31 @@ def _ensure_qty_flag_limit_column(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE master_inventory ADD COLUMN qty_flag_limit REAL")
 
 
+def _ensure_item_id_list_lifecycle_columns(conn: sqlite3.Connection) -> None:
+    table_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='item_id_list'"
+    ).fetchone()
+    if not table_exists:
+        return
+
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(item_id_list)").fetchall()}
+
+    if "version" not in cols:
+        conn.execute("ALTER TABLE item_id_list ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+    if "created_at" not in cols:
+        conn.execute(
+            "ALTER TABLE item_id_list ADD COLUMN created_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00Z'"
+        )
+    if "updated_at" not in cols:
+        conn.execute(
+            "ALTER TABLE item_id_list ADD COLUMN updated_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00Z'"
+        )
+    if "updated_by" not in cols:
+        conn.execute(
+            "ALTER TABLE item_id_list ADD COLUMN updated_by TEXT NOT NULL DEFAULT 'system'"
+        )
+
+
 def _is_blank_text(value: Any) -> bool:
     return str(value or "").strip() == ""
 
@@ -290,6 +315,7 @@ def create_app() -> Flask:
 
     with get_conn() as cleanup_conn:
         _ensure_qty_flag_limit_column(cleanup_conn)
+        _ensure_item_id_list_lifecycle_columns(cleanup_conn)
         _ensure_ui_rule_settings_table(cleanup_conn)
 
     # Ensure generated visual map assets exist for UX/backend introspection.

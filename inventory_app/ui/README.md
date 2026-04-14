@@ -8,6 +8,7 @@ Integrity-first Admin UI wired directly to `sql_inventory_master.db`.
 - Open [PUSH_CMD_SYSTEM.md](PUSH_CMD_SYSTEM.md) for the pre-action git push checklist and command recipes.
 - Open [CHANGE_GATE_PROTOCOL.md](CHANGE_GATE_PROTOCOL.md) for mandatory pre-change scope/impact disclosure.
 - Open [UI_CONTRACT_BASELINE.md](UI_CONTRACT_BASELINE.md) for global UI behavior/appearance contract.
+- Open [GLOBAL_UI_TEMPLATE.md](GLOBAL_UI_TEMPLATE.md) for required shared screen layout/regions across tiers.
 - Open [DRIFT_RECOVERY_2026-04-10.md](DRIFT_RECOVERY_2026-04-10.md) for recent drift reconstruction notes.
 - Open [GLOBAL_SCENARIO_LOCK.md](GLOBAL_SCENARIO_LOCK.md) for the permanent going-forward enforcement rules.
 - Open [MVP_ACTION_PROCEDURE.md](MVP_ACTION_PROCEDURE.md) for the step-by-step execution playbook for the new build.

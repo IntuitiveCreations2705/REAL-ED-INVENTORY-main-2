@@ -254,13 +254,28 @@ async function loadRows() {
   if (els.eventFilter.value) {
     params.set('event', els.eventFilter.value);
   }
-  const res = await fetch(`/api/master?${params.toString()}`);
-  state.rows = await res.json();
-  refreshBoxOptions();
-  refreshLocationOptions();
-  refreshEventTagOptions();
-  applyFilters();
-  setStatus(`Loaded ${state.rows.length} rows.`);
+
+  setTableState('loading', 'Loading inventory data…');
+  setStatus('Loading inventory data…');
+
+  try {
+    const res = await fetch(`/api/master?${params.toString()}`);
+    const data = await res.json();
+    if (!res.ok) {
+      setTableState('error', data.error || 'Failed to load inventory data. Try again.');
+      setStatus(data.error || 'Load failed. Use Refresh to retry.', true);
+      return;
+    }
+    state.rows = Array.isArray(data) ? data : [];
+    refreshBoxOptions();
+    refreshLocationOptions();
+    refreshEventTagOptions();
+    applyFilters();
+    setStatus(`Loaded ${state.rows.length} rows.`);
+  } catch (err) {
+    setTableState('error', `Unable to reach server: ${err.message}. Check app is running and Refresh.`);
+    setStatus('Load failed. Use Refresh to retry.', true);
+  }
 }
 
 async function loadEvents() {
@@ -400,6 +415,7 @@ async function validateAndSaveSelectedEventTags() {
 }
 
 function applyFilters() {
+  // called after loadRows; body already cleared by renderRows
   const view = els.viewMode.value;
   const box = normalizeBoxValue(els.boxFilter.value);
   const location = els.locationFilter.value.trim().toUpperCase();
@@ -519,6 +535,20 @@ function refreshLocationOptions() {
 
 function renderRows() {
   els.body.innerHTML = '';
+
+  if (state.filteredRows.length === 0 && state.rows.length > 0) {
+    const view = els.viewMode.value;
+    const desc = (els.searchItem?.value || '').trim();
+    const box = (els.boxFilter?.value || '').trim();
+    const loc = (els.locationFilter?.value || '').trim();
+    const evt = (els.eventFilter?.value || '').trim();
+    const hasFilters = desc || box || loc || evt || view !== 'all';
+    const msg = hasFilters
+      ? 'No rows match the current filters. Try adjusting view mode, event, or search text.'
+      : 'No inventory rows found.';
+    setTableState('empty', msg);
+    return;
+  }
 
   for (const row of state.filteredRows) {
     const tr = els.rowTemplate.content.firstElementChild.cloneNode(true);
@@ -1262,6 +1292,24 @@ function showTextEditModal(inputElement, row, fieldName, tr) {
 function setStatus(message, isError = false) {
   els.statusBar.textContent = message;
   els.statusBar.style.color = isError ? '#ff9aa8' : 'var(--muted)';
+}
+
+/**
+ * Renders a loading, error, or empty placeholder row into the main tbody.
+ * @param {'loading'|'error'|'empty'} type
+ * @param {string} message
+ */
+function setTableState(type, message) {
+  if (!els.body) return;
+  const colSpan = 17;
+  els.body.innerHTML = `<tr><td colspan="${colSpan}" class="table-state table-state--${type}">
+    <span class="table-state-icon">${type === 'loading' ? '⏳' : type === 'error' ? '⚠️' : 'ℹ️'}</span>
+    <span class="table-state-msg">${escapeHtml(message)}</span>
+    ${type === 'error' ? `<button class="btn secondary table-state-retry" type="button">Retry</button>` : ''}
+  </td></tr>`;
+  if (type === 'error') {
+    els.body.querySelector('.table-state-retry')?.addEventListener('click', () => loadRows());
+  }
 }
 
 function escapeHtml(str) {

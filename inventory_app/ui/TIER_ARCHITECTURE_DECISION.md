@@ -71,7 +71,7 @@ Operational admin interface with role-based sub-tiers:
   - Edit scope: Event-scoped facilitation data planning and preparation
   - Inherits: Global UI template
 
-All Tier 2 sub-tiers must inherit Global UI template standards.
+All Tier 2 sub-tiers must inherit Global UI template standards (defined in [GLOBAL_UI_TEMPLATE.md](GLOBAL_UI_TEMPLATE.md)).
 
 ### Tier 3 — Operations / Task-Focused UIs
 Crew-facing interfaces with role-based sub-tiers:
@@ -91,6 +91,8 @@ Crew-facing interfaces with role-based sub-tiers:
   - Inherits: Global UI template
 
 All Tier 3 sub-tiers support offline operation with intranet-only sync.
+
+Global inheritance contract reference: [GLOBAL_UI_TEMPLATE.md](GLOBAL_UI_TEMPLATE.md)
 
 ### Tier 4 — Team/Crew Extensions
 - Future provisioning layer for new team-specific UIs

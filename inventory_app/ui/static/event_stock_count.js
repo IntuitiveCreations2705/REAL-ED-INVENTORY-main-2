@@ -106,15 +106,25 @@ function wireEvents() {
 }
 
 async function loadRows() {
+  setTableState('loading', 'Loading stock count data…');
+  setStatus('Loading stock count data…');
+
   try {
     const res = await fetch('/api/event-stock-count');
-    state.rows = await res.json();
+    const data = await res.json();
+    if (!res.ok) {
+      setTableState('error', data.error || 'Failed to load stock count data. Try again.');
+      setStatus(data.error || 'Load failed. Use Refresh to retry.', true);
+      return;
+    }
+    state.rows = Array.isArray(data) ? data : [];
     refreshBoxOptions();
     refreshLocationOptions();
     applyFilters();
     setStatus(`Loaded ${state.rows.length} active rows.`);
   } catch (err) {
-    setStatus(`Error loading rows: ${err.message}`, true);
+    setTableState('error', `Unable to reach server: ${err.message}. Check app is running and Refresh.`);
+    setStatus('Load failed. Use Refresh to retry.', true);
   }
 }
 
@@ -294,9 +304,17 @@ function renderRows() {
   }
 
   if (!state.filteredRows.length) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = '<td colspan="10" class="stock-count-empty">No active rows match the current filters.</td>';
-    els.body.appendChild(tr);
+    const hasFilters = [
+      els.searchDescription?.value,
+      els.boxFilter?.value,
+      els.locationFilter?.value,
+      els.eventFilter?.value,
+      els.themeFilter?.value,
+    ].some((v) => (v || '').trim());
+    const msg = hasFilters
+      ? 'No active rows match the current filters. Try clearing filters or selecting a different event.'
+      : 'No active inventory rows found.';
+    setTableState('empty', msg);
   }
 
   syncDirtyUi();
@@ -440,6 +458,27 @@ function setStatus(message, isError = false) {
     } else {
       els.statusBar.classList.remove('error');
     }
+  }
+}
+
+/**
+ * Render a shared table placeholder row for loading, error, or empty states.
+ * @param {'loading'|'error'|'empty'} type
+ * @param {string} message
+ */
+function setTableState(type, message) {
+  if (!els.body) return;
+  const colSpan = 10;
+  els.body.innerHTML = `<tr><td colspan="${colSpan}" class="table-state table-state--${type}">
+    <span class="table-state-icon">${type === 'loading' ? '⏳' : type === 'error' ? '⚠️' : 'ℹ️'}</span>
+    <span class="table-state-msg">${escapeHtml(String(message))}</span>
+    ${type === 'error' ? '<button class="btn secondary table-state-retry" type="button">Retry</button>' : ''}
+  </td></tr>`;
+
+  if (type === 'error') {
+    els.body.querySelector('.table-state-retry')?.addEventListener('click', () => {
+      loadRows();
+    });
   }
 }
 

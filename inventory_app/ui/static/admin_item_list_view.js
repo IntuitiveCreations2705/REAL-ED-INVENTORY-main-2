@@ -121,21 +121,46 @@ async function loadRows() {
     q: els.searchQ.value,
   });
 
-  const res = await fetch(`/api/item-list?${params.toString()}`);
-  const data = await res.json();
-  state.rows = data.map((r) => ({
-    ...r,
-    original_item_id: r.item_id,
-    is_new: false,
-    isDirty: false,
-    clientKey: `row-${r.item_id}`,
-  }));
-  renderRows();
-  setStatus(`Loaded ${state.rows.length} item rows.`);
+  setTableState('loading', 'Loading item list…');
+  setStatus('Loading item list…');
+
+  try {
+    const res = await fetch(`/api/item-list?${params.toString()}`);
+    const data = await res.json();
+    if (!res.ok) {
+      state.rows = [];
+      setTableState('error', data.error || 'Failed to load Item ID List. Try again.');
+      return setStatus(data.error || 'Load failed. Use Refresh to retry.', true);
+    }
+
+    state.rows = data.map((r) => ({
+      ...r,
+      original_item_id: r.item_id,
+      is_new: false,
+      isDirty: false,
+      clientKey: `row-${r.item_id}`,
+    }));
+    renderRows();
+    setStatus(`Loaded ${state.rows.length} item rows.`);
+  } catch (err) {
+    state.rows = [];
+    setTableState('error', `Unable to reach server: ${err.message}. Check app is running and Refresh.`);
+    setStatus('Load failed. Use Refresh to retry.', true);
+  }
 }
 
 function renderRows() {
   els.body.innerHTML = '';
+
+  if (state.rows.length === 0) {
+    const q = (els.searchQ.value || '').trim();
+    const st = (els.statusFilter.value || 'all');
+    const msg = q || st !== 'all'
+      ? `No items match the current filter. Clear filters or add a new row.`
+      : `No items in the list yet. Use Add Row to create the first entry.`;
+    setTableState('empty', msg);
+    return;
+  }
 
   for (const row of state.rows) {
     const tr = els.rowTemplate.content.firstElementChild.cloneNode(true);
@@ -243,6 +268,24 @@ function renderRows() {
 function setStatus(message, isError = false) {
   els.statusBar.textContent = message;
   els.statusBar.style.color = isError ? '#ff9aa8' : 'var(--muted)';
+}
+
+/**
+ * Renders a loading, error, or empty placeholder row into the main tbody.
+ * @param {'loading'|'error'|'empty'} type
+ * @param {string} message
+ */
+function setTableState(type, message) {
+  if (!els.body) return;
+  const colSpan = 5;
+  els.body.innerHTML = `<tr><td colspan="${colSpan}" class="table-state table-state--${type}">
+    <span class="table-state-icon">${type === 'loading' ? '⏳' : type === 'error' ? '⚠️' : 'ℹ️'}</span>
+    <span class="table-state-msg">${String(message).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
+    ${type === 'error' ? `<button class="btn secondary table-state-retry" type="button">Retry</button>` : ''}
+  </td></tr>`;
+  if (type === 'error') {
+    els.body.querySelector('.table-state-retry')?.addEventListener('click', () => loadRows());
+  }
 }
 
 function markRowDirty(row) {
