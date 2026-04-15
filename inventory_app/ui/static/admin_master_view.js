@@ -16,6 +16,8 @@ const state = {
   knownBoxes: [],
   knownLocations: [],
   events: [],
+  boxFilterCommittedByKeyboard: false,
+  boxAccordionMode: false,
 };
 
 // Single dirty-row tracker — only one row may have unsaved edits at a time.
@@ -132,6 +134,8 @@ function initCapsDialog() {
 function wireEvents() {
   els.refreshBtn.addEventListener('click', async () => {
     if (guardDirtyRow()) return;
+    state.boxAccordionMode = false;
+    state.boxFilterCommittedByKeyboard = false;
     els.boxFilter.value = '';
     els.locationFilter.value = '';
     els.searchItem.value = '';
@@ -182,6 +186,10 @@ function wireEvents() {
 
   els.boxFilter.addEventListener('change', () => {
     if (guardDirtyRow()) return;
+    const committedByKeyboard = state.boxFilterCommittedByKeyboard;
+    state.boxFilterCommittedByKeyboard = false;
+    const selectedBox = normalizeBoxValue(els.boxFilter.value);
+    state.boxAccordionMode = Boolean(selectedBox) && !committedByKeyboard;
     applyFilters();
   });
 
@@ -189,6 +197,8 @@ function wireEvents() {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     if (guardDirtyRow()) return;
+    state.boxFilterCommittedByKeyboard = true;
+    state.boxAccordionMode = false;
     applyFilters();
   });
 
@@ -418,6 +428,7 @@ function applyFilters() {
   // called after loadRows; body already cleared by renderRows
   const view = els.viewMode.value;
   const box = normalizeBoxValue(els.boxFilter.value);
+  const boxKey = canonicalBoxKey(box);
   const location = els.locationFilter.value.trim().toUpperCase();
   const desc = els.searchItem.value.trim().toLowerCase();
 
@@ -426,7 +437,7 @@ function applyFilters() {
     if (view === 'inactive' && r.is_active !== 0) return false;
     if (view === 'unlinked' && (r.item_id !== null && r.item_id !== '')) return false;
     if (view === 'linked' && (r.item_id === null || r.item_id === '')) return false;
-    if (box && normalizeBoxValue(r.box_number) !== box) return false;
+    if (boxKey && canonicalBoxKey(r.box_number) !== boxKey) return false;
     if (location && (r.storage_location || '').toUpperCase() !== location) return false;
     if (desc && !(r.description || '').toLowerCase().includes(desc)) return false;
     return true;
@@ -922,6 +933,64 @@ function renderRows() {
 
     els.body.appendChild(tr);
   }
+
+  if (shouldUseBoxAccordionMode()) {
+    applyBoxAccordionMode();
+  }
+}
+
+function shouldUseBoxAccordionMode() {
+  if (!state.boxAccordionMode) return false;
+  const selectedBoxKey = canonicalBoxKey(els.boxFilter?.value || '');
+  if (!selectedBoxKey) return false;
+  if (state.filteredRows.length <= 1) return false;
+
+  return state.filteredRows.every((row) => canonicalBoxKey(row.box_number) === selectedBoxKey);
+}
+
+function applyBoxAccordionMode() {
+  const renderedRows = Array.from(els.body.querySelectorAll('tr'));
+  if (renderedRows.length <= 1) return;
+
+  const primaryRow = renderedRows[0];
+  const collapsedRows = renderedRows.slice(1);
+
+  let isExpanded = false;
+  const updateRowsVisibility = () => {
+    for (const row of collapsedRows) {
+      row.classList.toggle('box-group-collapsed-row', !isExpanded);
+      row.classList.toggle('box-group-expanded-row', isExpanded);
+    }
+  };
+
+  updateRowsVisibility();
+
+  const actionCell = primaryRow.lastElementChild;
+  if (!actionCell) return;
+
+  const controls = document.createElement('div');
+  controls.className = 'box-group-toggle-wrap';
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.className = 'btn secondary box-group-toggle-btn';
+
+  const updateLabel = () => {
+    const count = collapsedRows.length;
+    toggleBtn.textContent = isExpanded
+      ? `Hide ${count} row${count === 1 ? '' : 's'}`
+      : `Show ${count} row${count === 1 ? '' : 's'}`;
+  };
+
+  toggleBtn.addEventListener('click', () => {
+    isExpanded = !isExpanded;
+    updateRowsVisibility();
+    updateLabel();
+  });
+
+  updateLabel();
+  controls.appendChild(toggleBtn);
+  actionCell.appendChild(controls);
 }
 
 function normalizeDescriptionCase(value, keepCapsWords) {
@@ -999,6 +1068,10 @@ function normalizeLocationValue(value) {
 
 function normalizeBoxValue(value) {
   return String(value || '').trim().replace(/\s{2,}/g, ' ').toUpperCase();
+}
+
+function canonicalBoxKey(value) {
+  return normalizeBoxValue(value).replace(/[^A-Z0-9]/g, '');
 }
 
 function isSeniorAdminSession() {

@@ -1279,6 +1279,23 @@ tbody tr.row-dirty-flash {
   vertical-align: middle;
 }
 
+/* Admin Master: box-filter accordion mode (no layout structure change) */
+.box-group-collapsed-row {
+  display: none;
+}
+
+.box-group-toggle-wrap {
+  margin-top: 6px;
+  display: flex;
+  justify-content: center;
+}
+
+.box-group-toggle-btn {
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+}
+
 @keyframes pulse-muted {
 
   0%,
