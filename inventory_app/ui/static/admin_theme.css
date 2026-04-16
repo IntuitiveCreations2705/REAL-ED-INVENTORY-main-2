@@ -1286,14 +1286,33 @@ tbody tr.row-dirty-flash {
 
 .box-group-toggle-wrap {
   margin-top: 6px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(220px, auto) auto;
   justify-content: center;
+  align-items: center;
+  column-gap: 12px;
+}
+
+.box-group-header-row td {
+  background: color-mix(in srgb, var(--surface-soft) 86%, var(--primary) 14%);
+  border: 1px solid var(--border);
+}
+
+.box-group-header-cell {
+  padding: 10px 12px;
+}
+
+.box-group-title {
+  font-weight: 700;
+  color: var(--text);
+  text-align: right;
 }
 
 .box-group-toggle-btn {
   min-height: 30px;
   padding: 4px 8px;
   font-size: 0.8rem;
+  justify-self: start;
 }
 
 @keyframes pulse-muted {

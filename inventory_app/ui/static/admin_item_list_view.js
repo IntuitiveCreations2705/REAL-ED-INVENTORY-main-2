@@ -26,7 +26,6 @@ const els = {
 
 const REQUIRED_ITEM_LIST_FIELDS = [
   ['item_id', 'Item ID'],
-  ['status', 'Status'],
   ['item_name', 'Item Name'],
 ];
 
@@ -97,6 +96,7 @@ function wireEvents() {
       original_item_id: null,
       item_id: '',
       status: 'Active',
+      status_source: 'box_status_rule',
       item_name: '',
       used_count: 0,
       is_new: true,
@@ -175,6 +175,8 @@ function renderRows() {
 
     idInput.value = row.item_id || '';
     statusSelect.value = row.status || 'Active';
+    statusSelect.disabled = true;
+    statusSelect.title = 'Global rule: Item status is derived from linked Box status.';
     nameInput.value = row.item_name || '';
     const usedCount = Number(row.used_count || 0);
     usedCell.textContent = String(usedCount);
@@ -192,12 +194,6 @@ function renderRows() {
     idInput.addEventListener('input', () => {
       row.item_id = idInput.value;
       markRowDirty(row);
-    });
-    statusSelect.addEventListener('change', () => {
-      row.status = statusSelect.value;
-      markRowDirty(row);
-      statusSelect.classList.toggle('status-active', statusSelect.value === 'Active');
-      statusSelect.classList.toggle('status-inactive', statusSelect.value === 'Inactive');
     });
     nameInput.addEventListener('input', () => {
       row.item_name = nameInput.value;
@@ -234,7 +230,6 @@ function renderRows() {
         original_item_id: row.is_new ? null : row.original_item_id,
         version: row.is_new ? undefined : row.version,
         item_id: (row.item_id || '').trim(),
-        status: row.status || 'Active',
         item_name: itemName,
       };
 

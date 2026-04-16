@@ -43,6 +43,9 @@ UI_RULE_KEY_ACRONYM_ALLOWLIST = "acronym_allowlist"
 UI_RULE_KEY_TEAM_ADMIN_NOTES = "team_admin_notes"
 DEFAULT_ACRONYM_ALLOWLIST = ["usb", "xlr", "iec", "rca", "aa", "aaa"]
 EVENT_TAG_TOKEN_RE = re.compile(r"^[A-Z0-9_-]+$")
+CANONICAL_BOX_KEY_SQL = (
+    "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE({expr}, '')), ' ', ''), '-', ''), '_', ''), '.', ''))"
+)
 
 
 def api_error(
@@ -113,6 +116,58 @@ def _to_float(value: Any, field_name: str) -> tuple[float | None, tuple[Any, int
             code="invalid_number",
             field=field_name,
         )
+
+
+def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
+def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    return {r[1] for r in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+
+
+def _effective_item_status_from_box(
+    conn: sqlite3.Connection,
+    item_id: str,
+    fallback_status: str = "Active",
+) -> str:
+    """Global rule: Item status is governed by linked box status only.
+
+    Resolution:
+    - If no `box_id_list` table exists, fallback to stored status.
+    - If item has no master links, fallback to stored status.
+    - If any linked box is Active -> Active.
+    - If linked boxes exist and none are Active -> Inactive.
+    """
+    if not item_id:
+        return fallback_status
+    if not _table_exists(conn, "box_id_list"):
+        return fallback_status
+
+    box_expr = CANONICAL_BOX_KEY_SQL.format(expr="m.box_number")
+    row = conn.execute(
+        f"""
+        SELECT
+          COUNT(*) AS linked_rows,
+          SUM(CASE WHEN COALESCE(b.status, 'Active') = 'Active' THEN 1 ELSE 0 END) AS active_box_links
+        FROM master_inventory m
+        LEFT JOIN box_id_list b
+          ON {box_expr} = b.box_key
+        WHERE m.item_id = ?
+        """,
+        (item_id,),
+    ).fetchone()
+
+    linked_rows = int(row["linked_rows"] or 0) if row else 0
+    active_box_links = int(row["active_box_links"] or 0) if row else 0
+
+    if linked_rows == 0:
+        return fallback_status
+    return "Active" if active_box_links > 0 else "Inactive"
 
 
 def _validate_master_required_row_fields(row_values: dict[str, Any]) -> tuple[Any, int] | None:
@@ -435,7 +490,16 @@ def create_app() -> Flask:
                 """,
                 (term,),
             ).fetchall()
-        return jsonify([dict(r) for r in rows])
+            hydrated: list[dict[str, Any]] = []
+            for row in rows:
+                data = dict(row)
+                data["status"] = _effective_item_status_from_box(
+                    conn,
+                    str(data.get("item_id") or ""),
+                    str(data.get("status") or "Active"),
+                )
+                hydrated.append(data)
+        return jsonify(hydrated)
 
     @app.get("/api/master")
     def list_master() -> Any:
@@ -481,32 +545,74 @@ def create_app() -> Flask:
 
         where_clause = f"WHERE {' AND '.join(where)}" if where else ""
 
-        sql = f"""
-            SELECT
-                m.row_id,
-                m.item_id,
-                m.item_name,
-                m.box_number,
-                m.storage_location,
-                m.event_tags,
-                m.description,
-                m.crew_notes,
-                m.qty_required,
-                m.stock_on_hand,
-                m.qty_flag_limit,
-                m.count_confirmed,
-                m.order_stock_qty,
-                m.restock_comments,
-                m.is_active,
-                m.version,
-                m.updated_at,
-                m.updated_by
-            FROM master_inventory m
-            {where_clause}
-            ORDER BY m.row_id ASC
-        """
-
         with get_conn() as conn:
+            has_box_registry = _table_exists(conn, "box_id_list")
+            if has_box_registry:
+                box_cols = _table_columns(conn, "box_id_list")
+                box_expr = CANONICAL_BOX_KEY_SQL.format(expr="m.box_number")
+                box_type_select = (
+                    "COALESCE(b.box_type, '') AS box_type,"
+                    if "box_type" in box_cols
+                    else "'' AS box_type,"
+                )
+                sql = f"""
+                    SELECT
+                        m.row_id,
+                        m.item_id,
+                        m.item_name,
+                        m.box_number,
+                        m.storage_location,
+                        m.event_tags,
+                        m.description,
+                        m.crew_notes,
+                        m.qty_required,
+                        m.stock_on_hand,
+                        m.qty_flag_limit,
+                        m.count_confirmed,
+                        m.order_stock_qty,
+                        m.restock_comments,
+                        m.is_active,
+                        m.version,
+                        m.updated_at,
+                        m.updated_by,
+                        COALESCE(b.box_label, '') AS box_label,
+                        {box_type_select}
+                        COALESCE(b.box_id, '') AS box_id
+                    FROM master_inventory m
+                    LEFT JOIN box_id_list b
+                      ON {box_expr} = b.box_key
+                    {where_clause}
+                    ORDER BY m.row_id ASC
+                """
+            else:
+                sql = f"""
+                    SELECT
+                        m.row_id,
+                        m.item_id,
+                        m.item_name,
+                        m.box_number,
+                        m.storage_location,
+                        m.event_tags,
+                        m.description,
+                        m.crew_notes,
+                        m.qty_required,
+                        m.stock_on_hand,
+                        m.qty_flag_limit,
+                        m.count_confirmed,
+                        m.order_stock_qty,
+                        m.restock_comments,
+                        m.is_active,
+                        m.version,
+                        m.updated_at,
+                        m.updated_by,
+                        '' AS box_label,
+                        '' AS box_type,
+                        '' AS box_id
+                    FROM master_inventory m
+                    {where_clause}
+                    ORDER BY m.row_id ASC
+                """
+
             rows = conn.execute(sql, params).fetchall()
 
         return jsonify([dict(r) for r in rows])
@@ -1120,11 +1226,6 @@ def create_app() -> Flask:
         where = []
         params: list[Any] = []
 
-        if status == "active":
-            where.append("i.status = 'Active'")
-        elif status == "inactive":
-            where.append("i.status = 'Inactive'")
-
         if q:
             where.append("(LOWER(i.item_id) LIKE '%' || ? || '%' OR LOWER(i.item_name) LIKE '%' || ? || '%')")
             params.extend([q, q])
@@ -1151,8 +1252,24 @@ def create_app() -> Flask:
 
         with get_conn() as conn:
             rows = conn.execute(sql, params).fetchall()
+            hydrated: list[dict[str, Any]] = []
+            for row in rows:
+                data = dict(row)
+                effective_status = _effective_item_status_from_box(
+                    conn,
+                    str(data.get("item_id") or ""),
+                    str(data.get("status") or "Active"),
+                )
+                data["status"] = effective_status
+                data["status_source"] = "box_status_rule"
+                hydrated.append(data)
 
-        return jsonify([dict(r) for r in rows])
+            if status == "active":
+                hydrated = [r for r in hydrated if r.get("status") == "Active"]
+            elif status == "inactive":
+                hydrated = [r for r in hydrated if r.get("status") == "Inactive"]
+
+        return jsonify(hydrated)
 
     @app.post("/api/item-list/upsert")
     def upsert_item_id_list() -> Any:
@@ -1160,15 +1277,12 @@ def create_app() -> Flask:
         original_item_id = (payload.get("original_item_id") or "").strip() or None
         item_id = (payload.get("item_id") or "").strip()
         item_name = (payload.get("item_name") or "").strip()
-        status = (payload.get("status") or "").strip()
         client_version = payload.get("version", None)
 
         if not item_id:
             return api_error("item_id is required.")
         if not item_name:
             return api_error("item_name is required.")
-        if status not in {"Active", "Inactive"}:
-            return api_error("status must be Active or Inactive.")
 
         changed_by = _changed_by()
         try:
@@ -1210,6 +1324,11 @@ def create_app() -> Flask:
 
                     old_item_id = existing["item_id"]
                     old_item_name = existing["item_name"]
+                    effective_status = _effective_item_status_from_box(
+                        conn,
+                        old_item_id,
+                        str(existing["status"] or "Active"),
+                    )
                     used_count = int(existing["used_count"])
                     changing_key_pair = (item_id != old_item_id) or (item_name != old_item_name)
 
@@ -1243,7 +1362,7 @@ def create_app() -> Flask:
                                 updated_by = ?, version = version + 1
                             WHERE item_id = ?
                             """,
-                            (item_name, status, changed_by, old_item_id),
+                            (item_name, effective_status, changed_by, old_item_id),
                         )
                         conn.execute(
                             "UPDATE master_inventory SET item_id = ?, item_name = ?"
@@ -1261,7 +1380,7 @@ def create_app() -> Flask:
                                 updated_by = ?, version = version + 1
                             WHERE item_id = ?
                             """,
-                            (item_id, status, item_name, changed_by, original_item_id),
+                            (item_id, effective_status, item_name, changed_by, original_item_id),
                         )
                         saved_item_id = item_id
 
@@ -1277,9 +1396,10 @@ def create_app() -> Flask:
                         device_hint=request.remote_addr,
                     )
                 else:
+                    effective_status = _effective_item_status_from_box(conn, item_id, "Active")
                     conn.execute(
                         "INSERT INTO item_id_list (item_id, status, item_name) VALUES (?, ?, ?)",
-                        (item_id, status, item_name),
+                        (item_id, effective_status, item_name),
                     )
                     saved_item_id = item_id
                     write_audit(
@@ -1288,7 +1408,7 @@ def create_app() -> Flask:
                         row_ref=f"item_id={item_id}",
                         action="INSERT",
                         old_value=None,
-                        new_value=f"{item_id} | {item_name} | {status}",
+                        new_value=f"{item_id} | {item_name} | {effective_status}",
                         changed_by=changed_by,
                         device_hint=request.remote_addr,
                     )
@@ -1312,10 +1432,17 @@ def create_app() -> Flask:
                     """,
                     (saved_item_id,),
                 ).fetchone()
+                row_data = dict(row)
+                row_data["status"] = _effective_item_status_from_box(
+                    conn,
+                    row_data["item_id"],
+                    str(row_data.get("status") or "Active"),
+                )
+                row_data["status_source"] = "box_status_rule"
         except sqlite3.IntegrityError as exc:
             return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
 
-        return jsonify({"row": dict(row)})
+        return jsonify({"row": row_data})
 
     # ────────────────────────────────────────────────────────────────────────
     # Event Tag Catalog API (governance, lifecycle, role-based access)

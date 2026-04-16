@@ -41,6 +41,10 @@ All inheriting screens must include these regions in this order:
 - **Save discipline**: row-level or unit-level save actions must be explicit.
 - **Validation-first UX**: required-field and rule violations must block save with clear message.
 - **Theme consistency**: use shared tokens/classes from `static/admin_theme.css`.
+- **Box strategy model (MVP)**: when a box is selected, the view may render results as a collapsible box-group where:
+   - membership is governed by `box_number` key coherence,
+   - group heading is derived from `box_label` (fallback to box code),
+   - expanding the group reveals only rows belonging to that selected box.
 
 ## Mandatory shared style contract
 - Typography, button sizing, spacing rhythm, and control styles follow `admin_theme.css`.

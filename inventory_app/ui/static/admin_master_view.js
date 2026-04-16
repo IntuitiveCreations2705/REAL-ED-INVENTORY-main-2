@@ -950,14 +950,20 @@ function shouldUseBoxAccordionMode() {
 
 function applyBoxAccordionMode() {
   const renderedRows = Array.from(els.body.querySelectorAll('tr'));
-  if (renderedRows.length <= 1) return;
+  if (renderedRows.length === 0) return;
 
-  const primaryRow = renderedRows[0];
-  const collapsedRows = renderedRows.slice(1);
+  const selectedBox = normalizeBoxValue(els.boxFilter?.value || '');
+  const selectedBoxKey = canonicalBoxKey(selectedBox);
+  if (!selectedBoxKey) return;
+
+  const firstMatched = state.filteredRows.find(
+    (row) => canonicalBoxKey(row.box_number) === selectedBoxKey,
+  );
+  const resolvedLabel = String(firstMatched?.box_label || '').trim();
 
   let isExpanded = false;
   const updateRowsVisibility = () => {
-    for (const row of collapsedRows) {
+    for (const row of renderedRows) {
       row.classList.toggle('box-group-collapsed-row', !isExpanded);
       row.classList.toggle('box-group-expanded-row', isExpanded);
     }
@@ -965,21 +971,31 @@ function applyBoxAccordionMode() {
 
   updateRowsVisibility();
 
-  const actionCell = primaryRow.lastElementChild;
-  if (!actionCell) return;
+  const headerRow = document.createElement('tr');
+  headerRow.className = 'box-group-header-row';
+  const headerCell = document.createElement('td');
+  headerCell.colSpan = 16;
+  headerCell.className = 'box-group-header-cell';
+  headerRow.appendChild(headerCell);
 
   const controls = document.createElement('div');
   controls.className = 'box-group-toggle-wrap';
+
+  const title = document.createElement('div');
+  title.className = 'box-group-title';
+  title.textContent = resolvedLabel
+    ? `Box: ${selectedBox} - ${resolvedLabel}`
+    : `Box: ${selectedBox}`;
 
   const toggleBtn = document.createElement('button');
   toggleBtn.type = 'button';
   toggleBtn.className = 'btn secondary box-group-toggle-btn';
 
   const updateLabel = () => {
-    const count = collapsedRows.length;
+    const count = renderedRows.length;
     toggleBtn.textContent = isExpanded
-      ? `Hide ${count} row${count === 1 ? '' : 's'}`
-      : `Show ${count} row${count === 1 ? '' : 's'}`;
+      ? `Collapse (${count} row${count === 1 ? '' : 's'})`
+      : `Expand (${count} row${count === 1 ? '' : 's'})`;
   };
 
   toggleBtn.addEventListener('click', () => {
@@ -989,8 +1005,10 @@ function applyBoxAccordionMode() {
   });
 
   updateLabel();
+  controls.appendChild(title);
   controls.appendChild(toggleBtn);
-  actionCell.appendChild(controls);
+  headerCell.appendChild(controls);
+  els.body.insertBefore(headerRow, renderedRows[0]);
 }
 
 function normalizeDescriptionCase(value, keepCapsWords) {

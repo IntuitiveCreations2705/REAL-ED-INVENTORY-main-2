@@ -51,6 +51,12 @@ Primary shared source: `rules.py` (import this module from routes/views instead 
   - `box_number` is normalized to uppercase on insert and update.
   - Source: `POST /api/master`, `PATCH /api/master/<row_id>` in app.py via `rules.py`
 
+- Box strategy coherence rule (MVP)
+  - Box-group UX uses `box_number` as membership key and `box_label` as heading label.
+  - `GET /api/master` enriches rows with registry metadata (`box_label`, `box_id`, and optional `box_type`) when `box_id_list` exists.
+  - If registry table is absent, metadata falls back to empty strings so core master rows still load.
+  - Source: `GET /api/master` in app.py
+
 - Optimistic concurrency (`version`)
   - Save rejected if client `version` does not match DB (`stale_version`).
   - Source: `PATCH /api/master/<row_id>` in app.py
