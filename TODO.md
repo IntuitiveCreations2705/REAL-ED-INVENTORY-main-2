@@ -86,6 +86,30 @@ Ref: `REAL_AUTH_ROLE_ENFORCEMENT_DEFINITION.md` — Identity invariants policy.
 
 ---
 
+## P2 — Box ↔ Item referential integrity (orphan detection + FK enforcement)
+
+**Context:** `master_inventory.box_number` joins to `box_id_list.box_number` as a soft text match only.
+The cycle `item_id → item → box_number → box_id_list` is not closed at DB or API level.
+
+- [ ] Implement orphan detection queries
+  - `box_id_list` rows with zero `master_inventory` references (orphan boxes — registered but empty)
+  - `master_inventory` rows whose `box_number` has no matching `box_id_list` entry (dangling references)
+  - Query both directions; expose results via a `/api/integrity/orphans` endpoint
+
+- [ ] Wire orphan counts into UI as health indicator
+  - Show orphan box count + dangling item count in Admin Master header or a dedicated integrity panel
+  - Only show indicator when count > 0
+
+- [ ] Add FK at DB level: `master_inventory.box_number` → `box_id_list.box_number`
+  - Requires migration (SQLite FK enforcement via `PRAGMA foreign_keys = ON`)
+  - Prerequisite: all existing dangling `box_number` values resolved first (run orphan query above)
+  - Migration script: `migrations/` — new dated file
+
+- [ ] Prerequisite: P0 auth + identity invariants must be complete before FK is enforced
+  - FK lock-in is a breaking schema change — needs controlled rollout
+
+---
+
 ## P2 — Phase 2 placeholder isolation
 
 - [ ] Gate `global_sync_status.js`, `global_conflict_handler.js`, `global_role_context.js` behind feature flag

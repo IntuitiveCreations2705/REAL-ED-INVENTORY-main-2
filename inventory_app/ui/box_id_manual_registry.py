@@ -25,6 +25,12 @@ DB_PATH = ROOT / "sql_inventory_master.db"
 DEFAULT_EXPORT = ROOT / "inventory_app" / "exports" / "box_id_manual_template.csv"
 BOX_ID_RE = re.compile(r"^[A-Za-z0-9 _-]+$")
 
+# Sentinel values for fields that are structurally required but not yet filled.
+# Stored in the DB so rows are valid; rendered as blank in the UI and in CSV export.
+# NOTE: box_id has a UNIQUE constraint — it stays NULL when blank (NULLs are UNIQUE-safe in SQLite).
+# Only box_label (no uniqueness constraint) gets a sentinel string.
+SENTINEL_LABEL = "LABEL_PENDING"
+
 
 def canonical_box_key(value: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", str(value or "").strip().upper())
@@ -92,7 +98,10 @@ def export_template(output_path: Path) -> None:
         )
         writer.writeheader()
         for row in rows:
-            writer.writerow(dict(row))
+            r = dict(row)
+            if r.get('box_label') == SENTINEL_LABEL:
+                r['box_label'] = ''
+            writer.writerow(r)
 
     print(f"✓ Exported {len(rows)} rows to {output_path}")
     print("  Fill box_id/box_label manually, then run import.")
@@ -164,8 +173,8 @@ def import_template(input_path: Path, changed_by: str) -> None:
                 raise ValueError(f"Row {idx}: duplicate box_id '{box_id}' in import file.")
             seen_box_ids.add(box_id)
 
-        row["box_id"] = box_id or None
-        row["box_label"] = (row.get("box_label") or "").strip() or None
+        row["box_id"] = box_id or None  # NULL is UNIQUE-safe; pending state detected by JS via empty value
+        row["box_label"] = (row.get("box_label") or "").strip() or SENTINEL_LABEL
         row["box_type"] = (row.get("box_type") or "").strip() or None
 
     updated_at = now_iso()

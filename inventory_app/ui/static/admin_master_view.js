@@ -55,6 +55,14 @@ const els = {
   caseAllowlistInput: document.getElementById('case-allowlist-input'),
   caseAllowlistSaveBtn: document.getElementById('case-allowlist-save-btn'),
   caseAllowlistResetBtn: document.getElementById('case-allowlist-reset-btn'),
+  boxFilterCard: document.getElementById('box-filter-card'),
+  boxFilterTitle: document.getElementById('box-filter-title'),
+  boxFilterSubtitle: document.getElementById('box-filter-subtitle'),
+  boxFilterDetailId: document.getElementById('box-filter-detail-id'),
+  boxFilterDetailRows: document.getElementById('box-filter-detail-rows'),
+  boxFilterDetailVisible: document.getElementById('box-filter-detail-visible'),
+  boxFilterDetailLinked: document.getElementById('box-filter-detail-linked'),
+  boxFilterDetailLocations: document.getElementById('box-filter-detail-locations'),
 };
 
 // Used to detect when input text is visually truncated (so we only show hover expansion when needed).
@@ -443,7 +451,72 @@ function applyFilters() {
     return true;
   });
   updateProgress();
+  updateBoxFilterStickyCard();
   renderRows();
+}
+
+function updateBoxFilterStickyCard() {
+  if (!els.boxFilterCard) return;
+
+  const selectedBox = normalizeBoxValue(els.boxFilter?.value || '');
+  const selectedBoxKey = canonicalBoxKey(selectedBox);
+  if (!selectedBoxKey) {
+    els.boxFilterCard.classList.add('is-hidden');
+    return;
+  }
+
+  const SENTINEL_LABEL = 'LABEL_PENDING';
+  const allBoxRows = state.rows.filter((row) => canonicalBoxKey(row.box_number) === selectedBoxKey);
+  const visibleBoxRows = state.filteredRows.filter((row) => canonicalBoxKey(row.box_number) === selectedBoxKey);
+  const firstMatched = allBoxRows[0] || visibleBoxRows[0] || null;
+
+  const rawLabel = String(firstMatched?.box_label || '').trim();
+  const rawBoxId = String(firstMatched?.box_id || '').trim();
+  const resolvedLabel = rawLabel && rawLabel !== SENTINEL_LABEL ? rawLabel : '';
+  const labelPending = !resolvedLabel;
+  const idPending = !rawBoxId;
+  const linkedCount = allBoxRows.filter((row) => row.item_id !== null && row.item_id !== '').length;
+  const locationList = Array.from(new Set(
+    allBoxRows
+      .map((row) => normalizeLocationValue(row.storage_location))
+      .filter(Boolean),
+  ));
+
+  let locationSummary = '—';
+  if (locationList.length > 0) {
+    const preview = locationList.slice(0, 3).join(', ');
+    locationSummary = locationList.length > 3
+      ? `${preview} +${locationList.length - 3} more`
+      : preview;
+  }
+
+  if (els.boxFilterTitle) {
+    els.boxFilterTitle.textContent = resolvedLabel
+      ? `Box: ${selectedBox} — ${resolvedLabel}`
+      : `Box: ${selectedBox}`;
+  }
+
+  if (els.boxFilterSubtitle) {
+    if (!firstMatched) {
+      els.boxFilterSubtitle.textContent = 'No rows found for the selected box in the current dataset.';
+    } else if (labelPending || idPending) {
+      const missing = [];
+      if (idPending) missing.push('Box ID');
+      if (labelPending) missing.push('Label');
+      els.boxFilterSubtitle.textContent = `Pending metadata: ${missing.join(', ')}`;
+    } else {
+      els.boxFilterSubtitle.textContent = 'Box metadata pinned while filters are active.';
+    }
+  }
+
+  if (els.boxFilterDetailId) els.boxFilterDetailId.textContent = rawBoxId || 'ID_PENDING';
+  if (els.boxFilterDetailRows) els.boxFilterDetailRows.textContent = String(allBoxRows.length);
+  if (els.boxFilterDetailVisible) els.boxFilterDetailVisible.textContent = String(visibleBoxRows.length);
+  if (els.boxFilterDetailLinked) els.boxFilterDetailLinked.textContent = String(linkedCount);
+  if (els.boxFilterDetailLocations) els.boxFilterDetailLocations.textContent = locationSummary;
+
+  els.boxFilterCard.classList.toggle('is-pending', labelPending || idPending);
+  els.boxFilterCard.classList.remove('is-hidden');
 }
 
 function refreshEventTagOptions() {
@@ -956,10 +1029,17 @@ function applyBoxAccordionMode() {
   const selectedBoxKey = canonicalBoxKey(selectedBox);
   if (!selectedBoxKey) return;
 
+  const SENTINEL_LABEL = 'LABEL_PENDING';
+
   const firstMatched = state.filteredRows.find(
     (row) => canonicalBoxKey(row.box_number) === selectedBoxKey,
   );
-  const resolvedLabel = String(firstMatched?.box_label || '').trim();
+  const rawLabel = String(firstMatched?.box_label || '').trim();
+  const rawBoxId = String(firstMatched?.box_id || '').trim();
+  const resolvedLabel = (rawLabel === SENTINEL_LABEL) ? '' : rawLabel;
+  const labelPending = rawLabel === SENTINEL_LABEL;
+  const idPending = rawBoxId === '';          // NULL/empty = box_id not yet assigned
+  const hasPending = labelPending || idPending;
 
   let isExpanded = false;
   const updateRowsVisibility = () => {
@@ -986,6 +1066,17 @@ function applyBoxAccordionMode() {
   title.textContent = resolvedLabel
     ? `Box: ${selectedBox} - ${resolvedLabel}`
     : `Box: ${selectedBox}`;
+
+  if (hasPending) {
+    const pendingParts = [];
+    if (idPending) pendingParts.push('Box ID');
+    if (labelPending) pendingParts.push('Label');
+    const badge = document.createElement('span');
+    badge.className = 'box-pending-badge';
+    badge.title = `Pending: ${pendingParts.join(', ')} not yet assigned`;
+    badge.textContent = '⚠ Pending';
+    title.appendChild(badge);
+  }
 
   const toggleBtn = document.createElement('button');
   toggleBtn.type = 'button';

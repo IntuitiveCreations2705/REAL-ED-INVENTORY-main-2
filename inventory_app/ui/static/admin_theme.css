@@ -201,6 +201,60 @@ body {
   padding: 10px 12px;
 }
 
+.box-filter-summary-card {
+  padding: 10px 12px;
+  display: grid;
+  gap: 10px;
+  border-left: 4px solid color-mix(in srgb, var(--primary) 70%, var(--border));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 88%, var(--surface)), var(--surface));
+}
+
+.box-filter-summary-card.is-hidden {
+  display: none;
+}
+
+.box-filter-summary-card.is-pending {
+  border-left-color: #f59e0b;
+}
+
+.box-filter-summary-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.box-filter-summary-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.box-filter-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.box-filter-summary-grid>div {
+  display: grid;
+  gap: 3px;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 85%, #fff);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-soft) 78%, var(--bg));
+}
+
+.box-filter-summary-grid .meta-label {
+  color: var(--muted);
+  font-size: 0.73rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.box-filter-summary-grid strong {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
 .case-rules-panel details {
   display: grid;
   gap: 10px;
@@ -801,6 +855,10 @@ select:disabled {
   .case-allowlist-row {
     grid-template-columns: 1fr;
   }
+
+  .box-filter-summary-grid {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
 }
 
 @media (max-width: 1280px) {
@@ -1306,6 +1364,25 @@ tbody tr.row-dirty-flash {
   font-weight: 700;
   color: var(--text);
   text-align: right;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.box-pending-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--warning, #f59e0b);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  letter-spacing: 0.03em;
+  cursor: default;
+  white-space: nowrap;
 }
 
 .box-group-toggle-btn {
