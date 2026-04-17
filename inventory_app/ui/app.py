@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 import uuid
@@ -10,6 +11,7 @@ from typing import Any
 from flask import Flask, jsonify, render_template, request, send_file
 
 from audit import write_audit
+from backup_ops import run_prechange_snapshot, run_startup_daily_snapshot
 from db import DB_PATH, get_conn
 from rules import (
     as_number as _as_number,
@@ -368,6 +370,12 @@ def _validate_normalized_event_tags_for_event_definition(
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="static", template_folder="templates")
 
+    startup_backup = run_startup_daily_snapshot(changed_by="system")
+    if startup_backup.get("status") == "ok":
+        app.logger.info("Startup daily backup completed.")
+    elif startup_backup.get("status") == "error":
+        app.logger.warning("Startup daily backup failed: %s", startup_backup)
+
     with get_conn() as cleanup_conn:
         _ensure_qty_flag_limit_column(cleanup_conn)
         _ensure_item_id_list_lifecycle_columns(cleanup_conn)
@@ -648,6 +656,20 @@ def create_app() -> Flask:
                 invalid_tokens=invalid_tokens,
             )
 
+        prechange = run_prechange_snapshot(
+            reason=f"api.events.update_tags:{event_name}",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; update blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
         changed_by = _changed_by()
         with get_conn() as conn:
             existing = conn.execute(
@@ -701,6 +723,20 @@ def create_app() -> Flask:
         if not tokens:
             return api_error("tokens must contain at least one value.", 400)
 
+        prechange = run_prechange_snapshot(
+            reason="api.ui_rules.update_acronym_allowlist",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; update blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
         changed_by = _changed_by()
         with get_conn() as conn:
             old_tokens = _get_acronym_allowlist_tokens(conn)
@@ -743,6 +779,21 @@ def create_app() -> Flask:
     def update_team_admin_notes() -> Any:
         payload = request.get_json(silent=True) or {}
         notes = str(payload.get("notes", "") or "")
+
+        prechange = run_prechange_snapshot(
+            reason="api.ui_rules.update_team_admin_notes",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; update blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
         changed_by = _changed_by()
 
         with get_conn() as conn:
@@ -771,6 +822,20 @@ def create_app() -> Flask:
 
     @app.post("/api/ui-rules/acronym-allowlist/reset")
     def reset_acronym_allowlist() -> Any:
+        prechange = run_prechange_snapshot(
+            reason="api.ui_rules.reset_acronym_allowlist",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; reset blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
         changed_by = _changed_by()
         with get_conn() as conn:
             old_tokens = _get_acronym_allowlist_tokens(conn)
@@ -855,6 +920,20 @@ def create_app() -> Flask:
             is_valid, error_msg = validate_event_tags_against_catalog(event_tags, tag_conn)
             if not is_valid:
                 return api_error(error_msg or "Invalid tags.", 422, code="tag_validation_error")
+
+        prechange = run_prechange_snapshot(
+            reason="api.master.insert",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; insert blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
 
         changed_by = _changed_by()
         session_id = str(uuid.uuid4())
@@ -973,6 +1052,20 @@ def create_app() -> Flask:
                 )
                 if not is_valid:
                     return api_error(error_msg or "Invalid tags.", 422, code="tag_validation_error", row_id=row_id)
+
+        prechange = run_prechange_snapshot(
+            reason=f"api.master.update:{row_id}",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; update blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
 
         changed_by = _changed_by()
         session_id = str(uuid.uuid4())
@@ -1116,6 +1209,20 @@ def create_app() -> Flask:
 
     @app.post("/api/master/<int:row_id>/toggle-active")
     def toggle_active(row_id: int) -> Any:
+        prechange = run_prechange_snapshot(
+            reason=f"api.master.toggle_active:{row_id}",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; toggle blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
         changed_by = _changed_by()
         with get_conn() as conn:
             row = conn.execute(
@@ -1164,6 +1271,20 @@ def create_app() -> Flask:
 
         if not item_id or not item_name:
             return api_error("item_id and item_name are required.")
+
+        prechange = run_prechange_snapshot(
+            reason=f"api.master.link_item:{row_id}",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; link blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
 
         changed_by = _changed_by()
         with get_conn() as conn:
@@ -1283,6 +1404,20 @@ def create_app() -> Flask:
             return api_error("item_id is required.")
         if not item_name:
             return api_error("item_name is required.")
+
+        prechange = run_prechange_snapshot(
+            reason="api.item_list.upsert",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; upsert blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
 
         changed_by = _changed_by()
         try:
@@ -1473,6 +1608,20 @@ def create_app() -> Flask:
         if not tag_name:
             return api_error("tag_name is required.", 400)
 
+        prechange = run_prechange_snapshot(
+            reason="api.event_tags.create",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; create blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
         tag_name = tag_name.upper()
         changed_by = _changed_by()
         now = datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
@@ -1536,6 +1685,20 @@ def create_app() -> Flask:
 
         if not updates:
             return api_error("No updatable fields provided.", 400)
+
+        prechange = run_prechange_snapshot(
+            reason=f"api.event_tags.update:{tag_name}",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; update blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
 
         changed_by = _changed_by()
         now = datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')

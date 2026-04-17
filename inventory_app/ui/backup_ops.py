@@ -19,6 +19,7 @@ DEFAULT_DB_PATH = ROOT / "sql_inventory_master.db"
 DEFAULT_PRIMARY = ROOT / "inventory_app" / "backups"
 DEFAULT_SCRIPT = ROOT / "inventory_app" / "scripts" / "auto_backup.sh"
 STAMP_FILE = DEFAULT_PRIMARY / ".last_prechange_snapshot_ts"
+STARTUP_DAILY_STAMP_FILE = DEFAULT_PRIMARY / ".last_startup_daily_snapshot_date"
 
 
 def _as_bool(value: str | None, default: bool = True) -> bool:
@@ -27,7 +28,12 @@ def _as_bool(value: str | None, default: bool = True) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def run_prechange_snapshot(reason: str, changed_by: str = "system") -> dict[str, Any]:
+def run_prechange_snapshot(
+    reason: str,
+    changed_by: str = "system",
+    *,
+    force: bool = False,
+) -> dict[str, Any]:
     """Run pre-change backup snapshot with cooldown.
 
     Environment controls:
@@ -60,7 +66,7 @@ def run_prechange_snapshot(reason: str, changed_by: str = "system") -> dict[str,
     except Exception:
         last = 0
 
-    if now - last < interval_s:
+    if not force and now - last < interval_s:
         return {
             "status": "skipped_cooldown",
             "reason": reason,
@@ -99,3 +105,35 @@ def run_prechange_snapshot(reason: str, changed_by: str = "system") -> dict[str,
         "changed_by": changed_by,
         "stdout": proc.stdout.strip(),
     }
+
+
+def run_startup_daily_snapshot(changed_by: str = "system") -> dict[str, Any]:
+    """Run one forced snapshot on first app startup each day.
+
+    Environment controls:
+      INVENTORY_STARTUP_DAILY_BACKUP_ENABLED (default: true)
+    """
+    enabled = _as_bool(os.getenv("INVENTORY_STARTUP_DAILY_BACKUP_ENABLED"), True)
+    if not enabled:
+        return {"status": "disabled"}
+
+    primary = Path(os.getenv("INVENTORY_BACKUP_PRIMARY", str(DEFAULT_PRIMARY)))
+    primary.mkdir(parents=True, exist_ok=True)
+
+    today = time.strftime("%Y-%m-%d", time.localtime())
+    try:
+        last_date = STARTUP_DAILY_STAMP_FILE.read_text(encoding="utf-8").strip()
+    except Exception:
+        last_date = ""
+
+    if last_date == today:
+        return {"status": "skipped_already_ran", "date": today}
+
+    result = run_prechange_snapshot(
+        reason="startup.daily_boot",
+        changed_by=changed_by,
+        force=True,
+    )
+    if result.get("status") == "ok":
+        STARTUP_DAILY_STAMP_FILE.write_text(today, encoding="utf-8")
+    return result
