@@ -1,0 +1,9 @@
+[Unit]
+Description=Weekly inventory restore drill timer
+
+[Timer]
+OnCalendar=Sun *-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Weekly inventory backup restore drill
+After=network.target
+
+[Service]
+Type=oneshot
+User=inventory
+Group=inventory
+EnvironmentFile=-/etc/default/inventory-backup
+ExecStart=/bin/bash -lc '/opt/real-ed-inventory/inventory_app/scripts/restore_drill.sh "${BACKUP_PRIMARY}" "${BACKUP_PRIMARY}/restore_drill.log"'
+
+[Install]
+WantedBy=multi-user.target

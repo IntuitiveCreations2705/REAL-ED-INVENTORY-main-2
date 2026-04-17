@@ -1,0 +1,12 @@
+[Unit]
+Description=Inventory DB backup (runs backup script)
+After=network.target
+
+[Service]
+Type=oneshot
+User=inventory
+Group=inventory
+ExecStart=/usr/local/bin/inventory_auto_backup.sh
+
+[Install]
+WantedBy=multi-user.target
