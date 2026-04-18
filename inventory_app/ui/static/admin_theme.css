@@ -111,19 +111,21 @@ body {
 }
 
 .master-shell {
-  height: 100vh;
+  min-height: 100vh;
+  min-height: 100dvh;
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .stock-count-shell {
-  height: 100vh;
+  min-height: 100vh;
+  min-height: 100dvh;
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .master-shell .sticky-tools {
   position: sticky;
   top: 0;
-  z-index: 30;
+  z-index: 40;
   display: grid;
   gap: 10px;
   padding-top: 2px;
@@ -133,7 +135,7 @@ body {
 .stock-count-shell .sticky-tools {
   position: sticky;
   top: 0;
-  z-index: 30;
+  z-index: 40;
   display: grid;
   gap: 10px;
   padding-top: 2px;
@@ -648,12 +650,18 @@ td input[data-field="restock_comments"]:hover {
   min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  position: relative;
+  isolation: isolate;
+  z-index: 1;
 }
 
 .stock-count-shell .table-wrap {
   min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  position: relative;
+  isolation: isolate;
+  z-index: 1;
 }
 
 table {
@@ -890,6 +898,20 @@ select:disabled {
   }
 }
 
+@media (max-height: 900px) {
+
+  .master-shell,
+  .stock-count-shell {
+    height: auto;
+    grid-template-rows: auto auto auto;
+  }
+
+  .master-shell .table-wrap,
+  .stock-count-shell .table-wrap {
+    overflow: auto;
+  }
+}
+
 /* Progress counter */
 .progress-counter {
   display: flex;
@@ -964,16 +986,26 @@ select:disabled {
 
 .stock-count-table thead th:nth-child(1),
 .stock-count-table tbody td:nth-child(1) {
-  width: 9ch;
-  min-width: 9ch;
-  text-align: center;
+  width: 24ch;
+  min-width: 24ch;
+  text-align: left;
 }
 
 .stock-count-table thead th:nth-child(2),
 .stock-count-table tbody td:nth-child(2) {
   width: 14ch;
   min-width: 14ch;
-  text-align: center;
+  text-align: left;
+}
+
+.stock-count-table thead th {
+  padding-left: 3px;
+  padding-right: 3px;
+}
+
+.stock-count-table tbody td {
+  padding-left: 3px;
+  padding-right: 3px;
 }
 
 .stock-count-table thead th:nth-child(3),
@@ -996,11 +1028,15 @@ select:disabled {
 }
 
 .stock-count-table thead th:nth-child(8),
-.stock-count-table tbody td:nth-child(8),
-.stock-count-table thead th:nth-child(9),
-.stock-count-table tbody td:nth-child(9) {
+.stock-count-table tbody td:nth-child(8) {
   width: 50ch;
   min-width: 50ch;
+}
+
+.stock-count-table thead th:nth-child(9),
+.stock-count-table tbody td:nth-child(9) {
+  width: 25ch;
+  min-width: 25ch;
 }
 
 .stock-count-table thead th:nth-child(10),
@@ -1047,6 +1083,140 @@ select:disabled {
   max-width: none;
   resize: none;
   overflow: visible;
+}
+
+/* Box group header row styling */
+.stock-count-table tr.box-group-header {
+  position: relative;
+  z-index: 3;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 8%, transparent), color-mix(in srgb, var(--primary) 4%, transparent));
+  border-top: 2px solid var(--primary);
+  border-bottom: 1px solid var(--border);
+}
+
+.stock-count-table tr.box-group-header:hover {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 12%, transparent), color-mix(in srgb, var(--primary) 8%, transparent));
+}
+
+.box-header-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px !important;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.box-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.18s ease;
+}
+
+.box-group-toggle:hover {
+  color: var(--primary);
+}
+
+.box-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 0.9rem;
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+}
+
+.box-header-display {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+.box-header-label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: var(--muted);
+  line-height: 1.3;
+}
+
+.box-item-count {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 400;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.box-toggle-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.save-box-btn {
+  min-width: 120px;
+  margin-left: auto;
+}
+
+.stock-count-table tr.box-group-header.is-dirty-box {
+  z-index: 4;
+  outline: 2px solid #e76f51;
+  outline-offset: -2px;
+}
+
+.box-row-action {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* Box group item rows (hidden by default) */
+.stock-count-table tr.box-group-item {
+  display: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  background: color-mix(in srgb, var(--surface-soft) 60%, transparent);
+}
+
+.stock-count-table tr.box-group-item.is-visible {
+  display: table-row;
+  opacity: 1;
+  position: relative;
+  z-index: 1;
+}
+
+.box-item-indent {
+  padding-left: 48px !important;
+  position: relative;
+}
+
+.box-item-indent::before {
+  content: '';
+  position: absolute;
+  left: 32px;
+  top: 50%;
+  width: 1px;
+  height: 18px;
+  background: color-mix(in srgb, var(--border) 50%, transparent);
+  transform: translateY(-50%);
 }
 
 .note-cell {
@@ -1424,4 +1594,63 @@ tbody tr.row-dirty-flash {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* ── Stock Count responsive breakpoints (tablet-first MVP) ─────────────── */
+@media (max-width: 1024px) {
+  .stock-count-shell {
+    max-width: 1024px;
+    width: min(100vw - 12px, 1024px);
+  }
+
+  .stock-count-shell .controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stock-count-table {
+    min-width: 1120px;
+  }
+}
+
+@media (max-width: 834px) and (orientation: portrait) {
+  .stock-count-shell {
+    width: calc(100vw - 8px);
+    padding: 6px;
+  }
+
+  .stock-count-shell .controls {
+    grid-template-columns: 1fr;
+  }
+
+  .stock-count-table {
+    min-width: 900px;
+  }
+
+  .stock-count-table thead th,
+  .stock-count-table tbody td {
+    font-size: 10pt;
+  }
+
+  .box-header-cell {
+    padding: 8px 10px !important;
+  }
+
+  .box-group-toggle {
+    gap: 8px;
+    font-size: 0.92rem;
+  }
+
+  .box-toggle-label {
+    font-size: 0.72rem;
+  }
+
+  .box-item-count {
+    font-size: 0.78rem;
+  }
+}
+
+@media (max-width: 768px) and (orientation: portrait) {
+  .stock-count-table {
+    min-width: 820px;
+  }
 }

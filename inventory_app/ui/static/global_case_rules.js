@@ -137,15 +137,50 @@ export function hasAllCapsWords(value) {
   });
 }
 
-export function toTitleCaseWithJoiners(value) {
+function resolveAllowWords(options = {}) {
+  const sourceWords = options.allowWords && options.allowWords.length > 0
+    ? options.allowWords
+    : getActiveCaseAllowlist();
+  const exceptionWords = new Set(
+    (options.exceptionWords || []).map((word) => String(word || '').toLowerCase()),
+  );
+
+  return new Set(
+    sourceWords
+      .map((word) => String(word || '').toLowerCase())
+      .filter((word) => Boolean(word) && !exceptionWords.has(word)),
+  );
+}
+
+export function toTitleCaseWithJoiners(value, options = {}) {
   const s = String(value || '').trim();
   if (!s) return s;
 
-  const words = s.toLowerCase().split(/\s+/);
+  const allowWords = resolveAllowWords(options);
+  const words = s.split(/\s+/);
   const titled = words
-    .map((word, index) => {
-      if (index > 0 && JOINERS.has(word)) return word;
-      return word.charAt(0).toUpperCase() + word.slice(1);
+    .map((originalWord, index) => {
+      const letterOnly = originalWord.replace(/[^A-Za-z]/g, '');
+      const lowerLetters = letterOnly.toLowerCase();
+      const lowerWord = originalWord.toLowerCase();
+      const joinerKey = lowerWord.replace(/[^a-z]/g, '');
+      const isPlainAlphaWord = /^[A-Za-z]+$/.test(originalWord);
+
+      if (allowWords.has(lowerLetters)) {
+        return replaceWordCoreCasing(originalWord, letterOnly.toUpperCase());
+      }
+
+      if (CANONICAL_CASE_WORDS.has(lowerLetters)) {
+        return replaceWordCoreCasing(originalWord, CANONICAL_CASE_WORDS.get(lowerLetters));
+      }
+
+      if (ALWAYS_LOWER_WORDS.has(lowerLetters)) {
+        return replaceWordCoreCasing(originalWord, lowerLetters);
+      }
+
+      if (index > 0 && isPlainAlphaWord && JOINERS.has(joinerKey)) return lowerWord;
+
+      return capitalizeFirstLetter(lowerWord);
     })
     .join(' ');
 

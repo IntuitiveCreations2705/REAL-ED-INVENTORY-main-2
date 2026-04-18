@@ -5,15 +5,17 @@ const state = {
   knownLocations: [],
   events: [],
   themes: [],
+  stockNullNormalizedCount: 0,
 };
 
 const dirtyState = {
-  rowId: null,
-  edits: {},
+  boxKey: null,
+  editsByRow: {},
 };
 
 const MAX_NOTE_LENGTH = 200;
 const PREVIEW_NOTE_LENGTH = 50;
+const STOCK_EDITABLE_FIELD = 'stock_on_hand';
 
 const els = {
   body: document.getElementById('rows-body'),
@@ -97,6 +99,7 @@ function wireEvents() {
 
   document.addEventListener('click', handleDocumentClick);
   document.addEventListener('keydown', handleDocumentKeydown);
+  document.addEventListener('click', handlePotentialExportClick, true);
 
   if (els.teamAdminNotesInput) {
     els.teamAdminNotesInput.addEventListener('input', debounce((e) => {
@@ -117,7 +120,20 @@ async function loadRows() {
       setStatus(data.error || 'Load failed. Use Refresh to retry.', true);
       return;
     }
-    state.rows = Array.isArray(data) ? data : [];
+    let nullNormalizedCount = 0;
+    state.rows = (Array.isArray(data) ? data : []).map((row) => {
+      const normalized = { ...row };
+      const raw = normalized.stock_on_hand;
+      const asNumber = Number(raw);
+      if (raw == null || raw === '' || Number.isNaN(asNumber)) {
+        nullNormalizedCount += 1;
+        normalized.stock_on_hand = 0;
+      } else {
+        normalized.stock_on_hand = asNumber;
+      }
+      return normalized;
+    });
+    state.stockNullNormalizedCount = nullNormalizedCount;
     refreshBoxOptions();
     refreshLocationOptions();
     applyFilters();
@@ -211,9 +227,9 @@ function refreshBoxOptions() {
 
   state.knownBoxes = Array.from(new Set(
     state.rows
-      .map((r) => normalizeBoxValue(r.box_number))
+      .map((r) => normalizeBoxValue(r.box_number || ''))
       .filter(Boolean),
-  )).sort((a, b) => a.localeCompare(b));
+  )).sort(sortBoxesAlphanumericHierarchical);
 
   els.boxFilterOptions.innerHTML = '';
 
@@ -274,34 +290,81 @@ function applyFilters() {
 function renderRows() {
   els.body.innerHTML = '';
 
+  // Group rows by box number
+  const groupsByBox = {};
   for (const row of state.filteredRows) {
-    const tr = document.createElement('tr');
-    tr.dataset.rowId = String(row.row_id || '');
-    const crewNotes = normalizeLegacyNoteValue(row.crew_notes);
-    const restockComments = normalizeLegacyNoteValue(row.restock_comments);
+    const boxKey = (row.box_number || '').trim().toUpperCase();
+    if (!groupsByBox[boxKey]) {
+      groupsByBox[boxKey] = [];
+    }
+    groupsByBox[boxKey].push(row);
+  }
 
-    const dirtyEdits = dirtyState.rowId === Number(row.row_id) ? dirtyState.edits : {};
-    const qtyRequired = dirtyEdits.qty_required ?? row.qty_required ?? 0;
-    const stockOnHand = dirtyEdits.stock_on_hand ?? row.stock_on_hand ?? 0;
-    const qtyFlagLimit = dirtyEdits.qty_flag_limit ?? row.qty_flag_limit;
-    const orderStockQty = dirtyEdits.order_stock_qty ?? row.order_stock_qty ?? 0;
+  // Sort box keys alphanumerically
+  const sortedBoxKeys = Object.keys(groupsByBox).sort(sortBoxesAlphanumericHierarchical);
 
-    tr.innerHTML = `
-      <td class="mono">${escapeHtml(formatBoxDisplay(row))}</td>
-      <td class="mono">${escapeHtml((row.storage_location || '').toUpperCase())}</td>
-      <td class="col-description">${escapeHtml(row.description || '')}</td>
-      <td class="mono"><input class="row-edit-input" data-row-id="${row.row_id}" data-field="qty_required" type="number" step="1" min="0" value="${escapeHtml(String(qtyRequired))}" /></td>
-      <td class="mono"><input class="row-edit-input" data-row-id="${row.row_id}" data-field="stock_on_hand" type="number" step="1" min="0" value="${escapeHtml(String(stockOnHand))}" /></td>
-      <td class="mono"><input class="row-edit-input" data-row-id="${row.row_id}" data-field="qty_flag_limit" type="number" step="1" min="0" value="${qtyFlagLimit == null ? '' : escapeHtml(String(qtyFlagLimit))}" /></td>
-      <td class="mono"><input class="row-edit-input" data-row-id="${row.row_id}" data-field="order_stock_qty" type="number" step="1" min="0" value="${escapeHtml(String(orderStockQty))}" /></td>
-      <td class="note-cell">${renderExpandableNoteCell('Crew Notes', crewNotes)}</td>
-      <td class="note-cell">${renderExpandableNoteCell('Restock Comments', restockComments)}</td>
-      <td>
-        <button class="btn save-row-btn" type="button" data-row-id="${row.row_id}">Save</button>
+  // Render each box group with header and collapsible items
+  for (const boxKey of sortedBoxKeys) {
+    const itemsInBox = groupsByBox[boxKey];
+    const firstRow = itemsInBox[0];
+    const itemCount = itemsInBox.length;
+    const boxNumber = normalizeBoxValue(firstRow.box_number || '');
+    const rawLabel = String(firstRow.box_label || '').trim();
+    const boxLabel = (rawLabel && rawLabel !== 'LABEL_PENDING') ? rawLabel : '';
+    const headerLine = boxLabel
+      ? `${escapeHtml(boxNumber)} — <span>${escapeHtml(boxLabel)}</span>`
+      : escapeHtml(boxNumber);
+    // Create collapsible box header row (collapsed on first render)
+    const headerTr = document.createElement('tr');
+    headerTr.classList.add('box-group-header');
+    if (dirtyState.boxKey && dirtyState.boxKey === boxKey) {
+      headerTr.classList.add('is-dirty-box');
+    }
+    headerTr.dataset.boxKey = boxKey;
+    headerTr.dataset.itemCount = itemCount;
+
+    headerTr.innerHTML = `
+      <td colspan="10" class="box-header-cell">
+        <button class="box-group-toggle" type="button" data-box-key="${escapeHtml(boxKey)}" aria-expanded="false" title="Open box">
+          <span class="box-toggle-icon">▶</span>
+          <span class="box-toggle-label">OPEN BOX</span>
+          <span class="box-header-display">${headerLine}</span>
+          <span class="box-item-count">[${itemCount} ${itemCount === 1 ? 'item' : 'items'}]</span>
+        </button>
       </td>
     `;
+    els.body.appendChild(headerTr);
 
-    els.body.appendChild(tr);
+    // Create item rows under this box (hidden by default)
+    for (const row of itemsInBox) {
+      const itemTr = document.createElement('tr');
+      itemTr.classList.add('box-group-item');
+      itemTr.dataset.boxKey = boxKey;
+      itemTr.dataset.rowId = String(row.row_id || '');
+
+      const crewNotes = normalizeLegacyNoteValue(row.crew_notes);
+      const restockComments = normalizeLegacyNoteValue(row.restock_comments);
+
+      const dirtyEdits = getDirtyEditsForRow(Number(row.row_id));
+      const qtyRequired = dirtyEdits.qty_required ?? row.qty_required ?? 0;
+      const stockOnHand = dirtyEdits.stock_on_hand ?? row.stock_on_hand ?? 0;
+      const qtyFlagLimit = dirtyEdits.qty_flag_limit ?? row.qty_flag_limit ?? 0;
+      const orderStockQty = dirtyEdits.order_stock_qty ?? row.order_stock_qty ?? 0;
+
+      itemTr.innerHTML = `
+        <td class="mono box-item-indent">${escapeHtml((row.box_number || '').trim().toUpperCase())}</td>
+        <td class="mono">${escapeHtml((row.storage_location || '').toUpperCase())}</td>
+        <td class="col-description">${escapeHtml(row.description || '')}</td>
+        <td class="mono">${escapeHtml(String(qtyRequired))}</td>
+        <td class="mono"><input class="row-edit-input" data-row-id="${row.row_id}" data-field="stock_on_hand" type="number" step="1" min="0" value="${escapeHtml(String(stockOnHand))}" /></td>
+        <td class="mono">${escapeHtml(String(qtyFlagLimit))}</td>
+        <td class="mono">${escapeHtml(String(orderStockQty))}</td>
+        <td class="note-cell">${renderExpandableNoteCell('Crew Notes', crewNotes)}</td>
+        <td class="note-cell">${renderExpandableNoteCell('Restock Comments', restockComments)}</td>
+        <td class="mono box-row-action"><button class="btn save-row-btn" type="button" data-row-id="${row.row_id}">Save</button></td>
+      `;
+      els.body.appendChild(itemTr);
+    }
   }
 
   if (!state.filteredRows.length) {
@@ -319,54 +382,7 @@ function renderRows() {
   }
 
   syncDirtyUi();
-}
-
-function guardDirtyRow(actionLabel = 'continuing') {
-  if (dirtyState.rowId === null) return false;
-  flashDirtyRow();
-  setStatus(`Save row ${dirtyState.rowId} before ${actionLabel}.`, true);
-  return true;
-}
-
-function flashDirtyRow() {
-  if (!els.body || dirtyState.rowId === null) return;
-  const tr = els.body.querySelector(`tr[data-row-id="${dirtyState.rowId}"]`);
-  if (!tr) return;
-  tr.classList.remove('row-dirty-flash');
-  void tr.offsetWidth;
-  tr.classList.add('row-dirty-flash');
-}
-
-function handleRowFieldInput(event) {
-  const input = event.target;
-  if (!(input instanceof HTMLInputElement)) return;
-  if (!input.classList.contains('row-edit-input')) return;
-
-  const rowId = Number(input.dataset.rowId || 0);
-  if (!rowId) return;
-
-  if (dirtyState.rowId !== null && dirtyState.rowId !== rowId) {
-    guardDirtyRow('editing another row');
-    return;
-  }
-
-  const field = input.dataset.field;
-  if (!field) return;
-
-  if (dirtyState.rowId === null) {
-    dirtyState.rowId = rowId;
-    dirtyState.edits = {};
-  }
-
-  if (field === 'qty_flag_limit') {
-    const raw = String(input.value || '').trim();
-    dirtyState.edits[field] = raw === '' ? null : Number(raw);
-  } else {
-    dirtyState.edits[field] = Number(input.value || 0);
-  }
-
-  syncDirtyUi();
-  setStatus(`Row ${rowId} has unsaved changes. Click Save.`);
+  wireBoxGroupToggles();
 }
 
 function handleRowSaveClick(event) {
@@ -376,8 +392,15 @@ function handleRowSaveClick(event) {
   const rowId = Number(button.dataset.rowId || 0);
   if (!rowId) return;
 
-  if (dirtyState.rowId !== null && dirtyState.rowId !== rowId) {
-    guardDirtyRow('saving another row');
+  const row = state.rows.find((r) => Number(r.row_id) === rowId);
+  if (!row) {
+    setStatus(`Row ${rowId} not found. Refresh and retry.`, true);
+    return;
+  }
+
+  const rowBoxKey = canonicalBoxKey(row.box_number);
+  if (hasDirtyBox() && canonicalBoxKey(dirtyState.boxKey) !== rowBoxKey) {
+    guardDirtyRow('saving another box');
     return;
   }
 
@@ -391,20 +414,25 @@ async function saveRow(rowId) {
     return;
   }
 
-  const edits = dirtyState.rowId === rowId ? { ...dirtyState.edits } : {};
+  const edits = getDirtyEditsForRow(rowId);
   if (!Object.keys(edits).length) {
     setStatus(`Row ${rowId}: no changes to save.`);
     return;
   }
 
+  const stockOnlyEdits = {};
+  if (Object.prototype.hasOwnProperty.call(edits, STOCK_EDITABLE_FIELD)) {
+    stockOnlyEdits[STOCK_EDITABLE_FIELD] = Number(edits[STOCK_EDITABLE_FIELD] || 0);
+  }
+  if (!Object.keys(stockOnlyEdits).length) {
+    setStatus(`Row ${rowId}: only STOCK can be saved from this view.`);
+    return;
+  }
+
   const payload = {
     version: row.version,
-    ...edits,
+    ...stockOnlyEdits,
   };
-
-  if (Object.prototype.hasOwnProperty.call(edits, 'order_stock_qty')) {
-    payload.order_stock_qty_manual_override = true;
-  }
 
   try {
     const res = await fetch(`/api/master/${rowId}`, {
@@ -422,8 +450,11 @@ async function saveRow(rowId) {
       state.rows[idx] = { ...state.rows[idx], ...data.row };
     }
 
-    dirtyState.rowId = null;
-    dirtyState.edits = {};
+    delete dirtyState.editsByRow[String(rowId)];
+    if (!Object.keys(dirtyState.editsByRow).length) {
+      clearDirtyState();
+    }
+
     setStatus(`Row ${rowId} saved.`);
     applyFilters();
   } catch (err) {
@@ -431,13 +462,179 @@ async function saveRow(rowId) {
   }
 }
 
+function guardDirtyRow(actionLabel = 'continuing') {
+  if (!hasDirtyBox()) return false;
+  flashDirtyRow();
+  setStatus(`Save pending rows in box ${dirtyState.boxKey} before ${actionLabel}.`, true);
+  return true;
+}
+
+function hasDirtyBox() {
+  return Boolean(dirtyState.boxKey && Object.keys(dirtyState.editsByRow).length);
+}
+
+function getDirtyEditsForRow(rowId) {
+  return dirtyState.editsByRow[String(rowId)] || {};
+}
+
+function getDirtyRowIdsForBox(boxKey) {
+  return Object.keys(dirtyState.editsByRow)
+    .map((id) => Number(id))
+    .filter((rowId) => {
+      const row = state.rows.find((r) => Number(r.row_id) === rowId);
+      if (!row) return false;
+      return canonicalBoxKey(row.box_number) === canonicalBoxKey(boxKey);
+    });
+}
+
+function clearDirtyState() {
+  dirtyState.boxKey = null;
+  dirtyState.editsByRow = {};
+}
+
+function wireBoxGroupToggles() {
+  if (!els.body) return;
+
+  const toggles = els.body.querySelectorAll('.box-group-toggle');
+  toggles.forEach((toggle) => {
+    toggle.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const boxKey = toggle.dataset.boxKey;
+      const headerRow = toggle.closest('.box-group-header');
+      const itemRows = els.body.querySelectorAll(`.box-group-item[data-box-key="${boxKey}"]`);
+
+      if (hasDirtyBox()) {
+        if (dirtyState.boxKey !== boxKey) {
+          guardDirtyRow('opening another box');
+          return;
+        }
+        if (headerRow.classList.contains('is-expanded')) {
+          guardDirtyRow('closing this box');
+          return;
+        }
+      }
+
+      const isExpanded = headerRow.classList.contains('is-expanded');
+
+      if (isExpanded) {
+        // Collapse
+        headerRow.classList.remove('is-expanded');
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.querySelector('.box-toggle-icon').textContent = '▶';
+        const label = toggle.querySelector('.box-toggle-label');
+        if (label) label.textContent = 'OPEN BOX';
+        toggle.setAttribute('title', 'Open box');
+        itemRows.forEach((row) => row.classList.remove('is-visible'));
+      } else {
+        // Expand
+        headerRow.classList.add('is-expanded');
+        toggle.setAttribute('aria-expanded', 'true');
+        toggle.querySelector('.box-toggle-icon').textContent = '▼';
+        const label = toggle.querySelector('.box-toggle-label');
+        if (label) label.textContent = 'CLOSE BOX';
+        toggle.setAttribute('title', 'Close box');
+        itemRows.forEach((row) => row.classList.add('is-visible'));
+      }
+    });
+  });
+}
+
+function sortBoxesAlphanumericHierarchical(a, b) {
+  const aText = normalizeBoxValue(a);
+  const bText = normalizeBoxValue(b);
+
+  const aStartsDigit = /^\d/.test(aText);
+  const bStartsDigit = /^\d/.test(bText);
+
+  if (aStartsDigit && !bStartsDigit) return -1;
+  if (!aStartsDigit && bStartsDigit) return 1;
+
+  return aText.localeCompare(bText, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function flashDirtyRow() {
+  if (!els.body || !hasDirtyBox()) return;
+  const trs = els.body.querySelectorAll(`tr.box-group-item[data-box-key="${dirtyState.boxKey}"]`);
+  trs.forEach((tr) => {
+    tr.classList.remove('row-dirty-flash');
+    void tr.offsetWidth;
+    tr.classList.add('row-dirty-flash');
+  });
+}
+
+function handleRowFieldInput(event) {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement)) return;
+  if (!input.classList.contains('row-edit-input')) return;
+
+  const rowId = Number(input.dataset.rowId || 0);
+  if (!rowId) return;
+
+  const tr = input.closest('tr[data-row-id]');
+  const rowBoxKey = tr?.dataset.boxKey || '';
+  if (!rowBoxKey) return;
+
+  if (hasDirtyBox() && dirtyState.boxKey !== rowBoxKey) {
+    guardDirtyRow('editing another box');
+    return;
+  }
+
+  const field = input.dataset.field;
+  if (!field) return;
+  if (field !== STOCK_EDITABLE_FIELD) return;
+
+  if (!hasDirtyBox()) {
+    dirtyState.boxKey = rowBoxKey;
+    dirtyState.editsByRow = {};
+  }
+
+  const row = state.rows.find((r) => Number(r.row_id) === rowId);
+  if (!row) return;
+
+  const rowKey = String(rowId);
+  const nextRowEdits = {
+    ...(dirtyState.editsByRow[rowKey] || {}),
+  };
+
+  const nextValue = Number(input.value || 0);
+  const originalValue = Number(row[field] ?? 0);
+
+  if (nextValue === originalValue) {
+    delete nextRowEdits[field];
+  } else {
+    nextRowEdits[field] = nextValue;
+  }
+
+  if (Object.keys(nextRowEdits).length) {
+    dirtyState.editsByRow[rowKey] = nextRowEdits;
+  } else {
+    delete dirtyState.editsByRow[rowKey];
+  }
+
+  if (!Object.keys(dirtyState.editsByRow).length) {
+    clearDirtyState();
+  }
+
+  syncDirtyUi();
+  if (hasDirtyBox()) {
+    setStatus(`Box ${dirtyState.boxKey} has unsaved changes. Use Save in the Action column.`);
+  } else {
+    setStatus('No unsaved changes.');
+  }
+}
+
 function syncDirtyUi() {
   if (!els.body) return;
+
+  const hasDirty = hasDirtyBox();
   const rows = els.body.querySelectorAll('tr[data-row-id]');
   rows.forEach((tr) => {
     const rowId = Number(tr.dataset.rowId || 0);
-    const isDirtyRow = dirtyState.rowId !== null && rowId === dirtyState.rowId;
-    const isBlockedRow = dirtyState.rowId !== null && rowId !== dirtyState.rowId;
+    const rowBoxKey = tr.dataset.boxKey || '';
+    const isDirtyRow = Boolean(getDirtyEditsForRow(rowId) && Object.keys(getDirtyEditsForRow(rowId)).length);
+    const isBlockedRow = hasDirty && dirtyState.boxKey !== rowBoxKey;
 
     tr.classList.toggle('row-dirty', isDirtyRow);
     tr.querySelectorAll('.row-edit-input, .save-row-btn').forEach((el) => {
@@ -512,13 +709,6 @@ function canonicalBoxKey(value) {
   return normalizeBoxValue(value).replace(/[^A-Z0-9]/g, '');
 }
 
-function formatBoxDisplay(row) {
-  const box = normalizeBoxValue(row.box_number || '');
-  const rawLabel = String(row.box_label || '').trim();
-  const label = rawLabel && rawLabel !== 'LABEL_PENDING' ? rawLabel : '';
-  return label ? `${box} - ${label}` : box;
-}
-
 function debounce(func, wait) {
   let timeout;
   return function (...args) {
@@ -576,6 +766,32 @@ function handleNoteAccordionClick(event) {
 function handleDocumentClick(event) {
   if (event.target.closest('.note-accordion')) return;
   closeAllExpandedNotes();
+}
+
+function handlePotentialExportClick(event) {
+  const exportTrigger = event.target.closest('#export-btn, .export-btn, [data-action="export"], [data-role="export"]');
+  if (!exportTrigger) return;
+  if (!validateStockColumnBeforeExport()) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}
+
+function validateStockColumnBeforeExport() {
+  const invalidRows = state.rows.filter((row) => {
+    const raw = row.stock_on_hand;
+    return raw == null || raw === '' || Number.isNaN(Number(raw));
+  });
+
+  if (invalidRows.length > 0) {
+    setStatus(`Export blocked: ${invalidRows.length} STOCK value(s) are NULL/blank. Set STOCK to 0 before export.`, true);
+    return false;
+  }
+
+  if (state.stockNullNormalizedCount > 0) {
+    setStatus(`Export check: ${state.stockNullNormalizedCount} STOCK NULL value(s) were normalized to 0.`, false);
+  }
+  return true;
 }
 
 function handleDocumentKeydown(event) {
