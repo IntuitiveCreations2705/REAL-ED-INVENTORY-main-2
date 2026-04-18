@@ -211,7 +211,7 @@ function refreshBoxOptions() {
 
   state.knownBoxes = Array.from(new Set(
     state.rows
-      .map((r) => (r.box_number || '').trim())
+      .map((r) => normalizeBoxValue(r.box_number))
       .filter(Boolean),
   )).sort((a, b) => a.localeCompare(b));
 
@@ -244,7 +244,8 @@ function refreshLocationOptions() {
 
 function applyFilters() {
   const desc = els.searchDescription.value.trim().toLowerCase();
-  const box = (els.boxFilter.value || '').trim();
+  const box = normalizeBoxValue(els.boxFilter.value || '');
+  const boxKey = canonicalBoxKey(box);
   const location = (els.locationFilter.value || '').trim().toUpperCase();
   const event = els.eventFilter.value;
   const theme = els.themeFilter.value;
@@ -253,7 +254,7 @@ function applyFilters() {
 
   state.filteredRows = state.rows.filter((r) => {
     if (desc && !(r.description || '').toLowerCase().includes(desc)) return false;
-    if (box && (r.box_number || '').trim() !== box) return false;
+    if (boxKey && canonicalBoxKey(r.box_number) !== boxKey) return false;
     if (location && (r.storage_location || '').trim().toUpperCase() !== location) return false;
     if (event && event !== 'All') {
       const rowTags = parsePipeTags(r.event_tags);
@@ -286,7 +287,7 @@ function renderRows() {
     const orderStockQty = dirtyEdits.order_stock_qty ?? row.order_stock_qty ?? 0;
 
     tr.innerHTML = `
-      <td class="mono">${escapeHtml(row.box_number || '')}</td>
+      <td class="mono">${escapeHtml(formatBoxDisplay(row))}</td>
       <td class="mono">${escapeHtml((row.storage_location || '').toUpperCase())}</td>
       <td class="col-description">${escapeHtml(row.description || '')}</td>
       <td class="mono"><input class="row-edit-input" data-row-id="${row.row_id}" data-field="qty_required" type="number" step="1" min="0" value="${escapeHtml(String(qtyRequired))}" /></td>
@@ -501,6 +502,21 @@ function parsePipeTags(value) {
     .split('|')
     .map((tag) => tag.trim().toUpperCase())
     .filter(Boolean);
+}
+
+function normalizeBoxValue(value) {
+  return String(value || '').trim().replace(/\s{2,}/g, ' ').toUpperCase();
+}
+
+function canonicalBoxKey(value) {
+  return normalizeBoxValue(value).replace(/[^A-Z0-9]/g, '');
+}
+
+function formatBoxDisplay(row) {
+  const box = normalizeBoxValue(row.box_number || '');
+  const rawLabel = String(row.box_label || '').trim();
+  const label = rawLabel && rawLabel !== 'LABEL_PENDING' ? rawLabel : '';
+  return label ? `${box} - ${label}` : box;
 }
 
 function debounce(func, wait) {

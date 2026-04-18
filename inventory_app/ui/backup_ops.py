@@ -82,6 +82,7 @@ def run_prechange_snapshot(
         }
 
     cmd = [
+        "/bin/bash",
         str(script_path),
         str(db_path),
         str(primary),

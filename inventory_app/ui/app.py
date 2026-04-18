@@ -1767,18 +1767,72 @@ def create_app() -> Flask:
         Only returns is_active = 1 rows.
         """
         with get_conn() as conn:
-            rows = conn.execute(
+            has_box_registry = _table_exists(conn, "box_id_list")
+            if has_box_registry:
+                box_cols = _table_columns(conn, "box_id_list")
+                box_expr = CANONICAL_BOX_KEY_SQL.format(expr="m.box_number")
+                box_type_select = (
+                    "COALESCE(b.box_type, '') AS box_type,"
+                    if "box_type" in box_cols
+                    else "'' AS box_type,"
+                )
+                sql = f"""
+                    SELECT
+                      m.row_id,
+                      m.item_id,
+                      m.item_name,
+                      m.box_number,
+                      m.storage_location,
+                      m.event_tags,
+                      m.description,
+                      m.qty_required,
+                      m.stock_on_hand,
+                      m.qty_flag_limit,
+                      m.order_stock_qty,
+                      m.crew_notes,
+                      m.restock_comments,
+                      m.is_active,
+                      m.version,
+                      m.created_at,
+                      m.updated_at,
+                      COALESCE(b.box_label, '') AS box_label,
+                      {box_type_select}
+                      COALESCE(b.box_id, '') AS box_id
+                    FROM master_inventory m
+                    LEFT JOIN box_id_list b
+                      ON {box_expr} = b.box_key
+                    WHERE m.is_active = 1
+                    ORDER BY m.box_number ASC, m.storage_location ASC, m.description ASC
                 """
-                SELECT
-                  row_id, item_id, item_name, box_number, storage_location,
-                  event_tags, description, qty_required, stock_on_hand,
-                                    qty_flag_limit, order_stock_qty, crew_notes, restock_comments,
-                                    is_active, version, created_at, updated_at
-                FROM master_inventory
-                WHERE is_active = 1
-                ORDER BY box_number ASC, storage_location ASC, description ASC
+            else:
+                sql = """
+                    SELECT
+                      m.row_id,
+                      m.item_id,
+                      m.item_name,
+                      m.box_number,
+                      m.storage_location,
+                      m.event_tags,
+                      m.description,
+                      m.qty_required,
+                      m.stock_on_hand,
+                      m.qty_flag_limit,
+                      m.order_stock_qty,
+                      m.crew_notes,
+                      m.restock_comments,
+                      m.is_active,
+                      m.version,
+                      m.created_at,
+                      m.updated_at,
+                      '' AS box_label,
+                      '' AS box_type,
+                      '' AS box_id
+                    FROM master_inventory m
+                    WHERE m.is_active = 1
+                    ORDER BY m.box_number ASC, m.storage_location ASC, m.description ASC
                 """
-            ).fetchall()
+
+            rows = conn.execute(sql).fetchall()
         return jsonify([dict(r) for r in rows])
 
     return app
