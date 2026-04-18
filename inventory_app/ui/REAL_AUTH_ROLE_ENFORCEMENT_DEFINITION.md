@@ -49,6 +49,13 @@ No endpoint is accessible without authentication. No public access.
 
 ## Identity invariants policy (effective now, enforcement rollout in progress)
 
+### Global immutable identity rule (authoritative)
+
+- `item_id` is the sole immutable existence anchor for inventory entities across the app.
+- All audit lineage, write authorization, conflict handling, and sync reconciliation pivot on `item_id`.
+- No UI display string (including composite labels) may be treated as an identity key for persistence.
+- `item_id` remains immutable once assigned and must never be repurposed.
+
 ### Item identity (existing, locked)
 
 - `item_id` is the immutable identity key for items. Must not be repurposed or changed once set.
@@ -81,6 +88,19 @@ This data comes directly from the existing manual naming convention carried into
 
 **Implementation gate:**
 Box identity model implementation is blocked until P0 auth and item identity invariant enforcement are complete.
+
+### UI display composition rule (non-identity)
+
+- Views may render UX-oriented composite labels (example: `box_number + box_label`) to improve operator readability.
+- Composite labels are presentation artifacts only and are non-binding for data identity.
+- Composite labels must never be used as persistence, matching, or audit keys.
+
+### Stock Count deviation clause (approved)
+
+- In Event Stock Count UI only, the `BOX` column is explicitly allowed to render a composite display value.
+- This is an instructed deviation for UX clarity and does not modify identity invariants.
+- Persistence and governance continue to bind to immutable `item_id` (and applicable backend keys), not the composite BOX text.
+- Extension of this deviation to any other UI requires explicit contract declaration before implementation.
 
 ---
 

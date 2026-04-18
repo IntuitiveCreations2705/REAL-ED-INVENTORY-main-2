@@ -11,6 +11,11 @@ This file is the functional + visual contract across admin screens.
 - Any deviation must be pre-declared in the Change Gate.
 - Going-forward lock reference: [GLOBAL_SCENARIO_LOCK.md](GLOBAL_SCENARIO_LOCK.md).
 
+## Global identity and display boundary (authoritative)
+- `item_id` is the sole immutable existence identity for inventory entities.
+- UI labels may be transformed/composed for readability, but display text is non-identity.
+- No composed display value may be used as a write key, audit key, or sync identity key.
+
 ## MVP system direction
 - App must function in offline-capable operating mode for core workflows.
 - System consists of:
@@ -30,6 +35,8 @@ This file is the functional + visual contract across admin screens.
 
 ## Stock Count contract (current agreement)
 - Stock Count is an operational summary view that must stay visually congruent with Admin Master baseline styles.
+- Event Stock Count `BOX` column may render composite UX text (for example `box_number + box_label`) as an approved display-only deviation.
+- This deviation does not relax persistence identity rules; backend identity remains bound to immutable `item_id`.
 - Notes columns use card-style preview behavior with expandable detail bubble.
 - Notes behavior:
   - preview target: 50 characters max
