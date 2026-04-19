@@ -12,13 +12,20 @@
   <main class="app-shell master-shell">
     <div class="sticky-tools">
       <header class="card header">
-        <div>
+        <div class="header-copy">
           <h1>Admin Master Inventory</h1>
           <p>Live DB view with integrity-enforced editing.</p>
           <!-- [ PHASE 2 RESERVED ] Role selector / scope indicator badge will be inserted here -->
           <!-- Use this space for: Tier 2.2 role specialization selector, device/BOX scope display -->
         </div>
-        <div id="progress-counter" class="progress-counter"></div>
+        <div class="header-summary">
+          <div id="progress-counter" class="progress-counter"></div>
+          <aside id="event-beacon" class="event-beacon" aria-live="polite">
+            <span class="event-beacon-label">Event Scope</span>
+            <strong id="event-beacon-name">ALL EVENTS</strong>
+            <span id="event-beacon-meta" class="event-beacon-meta">Scope open across all event-linked rows.</span>
+          </aside>
+        </div>
         <div class="header-actions">
           <a class="btn secondary btn-link" href="{{ url_for('item_list_page') }}">Item ID List Admin</a>
           <a class="btn secondary btn-link" href="{{ url_for('event_stock_count_page') }}">Event Stock Count</a>

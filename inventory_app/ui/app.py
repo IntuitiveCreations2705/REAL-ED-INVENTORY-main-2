@@ -44,6 +44,15 @@ EDITABLE_FIELDS = {
 UI_RULE_KEY_ACRONYM_ALLOWLIST = "acronym_allowlist"
 UI_RULE_KEY_TEAM_ADMIN_NOTES = "team_admin_notes"
 DEFAULT_ACRONYM_ALLOWLIST = ["usb", "xlr", "iec", "rca", "aa", "aaa"]
+DEFAULT_EVENT_THEME_ACCENT = "#4F8CFF"
+ROUGH_EVENT_THEME_COLORS = {
+    "Real Tantra": "#FB0404",
+    "Real Coach Program": "#00468C",
+    "Real Man 1": "#12C4AD",
+    "Real Woman 1": "#12C4AD",
+    "Real Spiritual Quest": "#B491F6",
+    "Real Relationships": "#FB0404",
+}
 EVENT_TAG_TOKEN_RE = re.compile(r"^[A-Z0-9_-]+$")
 CANONICAL_BOX_KEY_SQL = (
     "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE({expr}, '')), ' ', ''), '-', ''), '_', ''), '.', ''))"
@@ -99,6 +108,32 @@ def _ensure_item_id_list_lifecycle_columns(conn: sqlite3.Connection) -> None:
     if "updated_by" not in cols:
         conn.execute(
             "ALTER TABLE item_id_list ADD COLUMN updated_by TEXT NOT NULL DEFAULT 'system'"
+        )
+
+
+def _ensure_event_name_theme_column(conn: sqlite3.Connection) -> None:
+    table_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_name'"
+    ).fetchone()
+    if not table_exists:
+        return
+
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(event_name)").fetchall()}
+    column_added = False
+
+    if "theme_accent_hex" not in cols:
+        conn.execute(
+            f"ALTER TABLE event_name ADD COLUMN theme_accent_hex TEXT NOT NULL DEFAULT '{DEFAULT_EVENT_THEME_ACCENT}'"
+        )
+        column_added = True
+
+    if not column_added:
+        return
+
+    for event_name, accent_hex in ROUGH_EVENT_THEME_COLORS.items():
+        conn.execute(
+            "UPDATE event_name SET theme_accent_hex = ? WHERE event_name = ?",
+            (accent_hex, event_name),
         )
 
 
@@ -379,6 +414,7 @@ def create_app() -> Flask:
     with get_conn() as cleanup_conn:
         _ensure_qty_flag_limit_column(cleanup_conn)
         _ensure_item_id_list_lifecycle_columns(cleanup_conn)
+        _ensure_event_name_theme_column(cleanup_conn)
         _ensure_ui_rule_settings_table(cleanup_conn)
 
     # Ensure generated visual map assets exist for UX/backend introspection.
@@ -630,10 +666,11 @@ def create_app() -> Flask:
         with get_conn() as conn:
             rows = conn.execute(
                 """
-                SELECT event_name, tags
+                SELECT event_name, tags, COALESCE(theme_accent_hex, ?) AS theme_accent_hex
                 FROM event_name
                 ORDER BY event_name ASC
-                """
+                """,
+                (DEFAULT_EVENT_THEME_ACCENT,),
             ).fetchall()
 
         return jsonify([dict(r) for r in rows])
@@ -673,8 +710,8 @@ def create_app() -> Flask:
         changed_by = _changed_by()
         with get_conn() as conn:
             existing = conn.execute(
-                "SELECT event_name, tags FROM event_name WHERE event_name = ?",
-                (event_name,),
+                "SELECT event_name, tags, COALESCE(theme_accent_hex, ?) AS theme_accent_hex FROM event_name WHERE event_name = ?",
+                (DEFAULT_EVENT_THEME_ACCENT, event_name),
             ).fetchone()
             if existing is None:
                 return api_error("Event not found.", 404, code="event_not_found")
@@ -684,8 +721,8 @@ def create_app() -> Flask:
                 (normalized_tags, event_name),
             )
             updated = conn.execute(
-                "SELECT event_name, tags FROM event_name WHERE event_name = ?",
-                (event_name,),
+                "SELECT event_name, tags, COALESCE(theme_accent_hex, ?) AS theme_accent_hex FROM event_name WHERE event_name = ?",
+                (DEFAULT_EVENT_THEME_ACCENT, event_name),
             ).fetchone()
 
             write_audit(

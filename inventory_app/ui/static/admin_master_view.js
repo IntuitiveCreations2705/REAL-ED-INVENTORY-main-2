@@ -6,6 +6,11 @@ import {
   resetCaseAllowlist as sharedResetCaseAllowlist,
   saveCaseAllowlist as sharedSaveCaseAllowlist,
 } from './global_case_rules.js';
+import {
+  applyEventTheme,
+  DEFAULT_EVENT_ACCENT,
+  summarizePipeTags,
+} from './event_theme.js';
 
 const state = {
   rows: [],
@@ -63,6 +68,8 @@ const els = {
   boxFilterDetailVisible: document.getElementById('box-filter-detail-visible'),
   boxFilterDetailLinked: document.getElementById('box-filter-detail-linked'),
   boxFilterDetailLocations: document.getElementById('box-filter-detail-locations'),
+  eventBeaconName: document.getElementById('event-beacon-name'),
+  eventBeaconMeta: document.getElementById('event-beacon-meta'),
 };
 
 // Used to detect when input text is visually truncated (so we only show hover expansion when needed).
@@ -233,6 +240,7 @@ function wireEvents() {
     }
     persistSessionFilters();
     syncEventTagsEditor();
+    renderEventBeacon();
     await loadRows();
   });
 
@@ -319,6 +327,7 @@ async function loadEvents() {
   persistSessionFilters();
   syncEventTagsEditor();
   refreshEventTagOptions();
+  renderEventBeacon();
 }
 
 async function loadEventTagCatalog() {
@@ -362,6 +371,23 @@ function getSelectedEventDefinition() {
   const selected = els.eventFilter.value;
   if (!selected) return null;
   return state.events.find((e) => e.event_name === selected) || null;
+}
+
+function renderEventBeacon() {
+  const selectedEvent = getSelectedEventDefinition();
+  const accent = selectedEvent?.theme_accent_hex || DEFAULT_EVENT_ACCENT;
+  applyEventTheme(accent);
+
+  if (!els.eventBeaconName || !els.eventBeaconMeta) return;
+
+  if (!selectedEvent) {
+    els.eventBeaconName.textContent = 'ALL EVENTS';
+    els.eventBeaconMeta.textContent = 'Scope open across all event-linked rows.';
+    return;
+  }
+
+  els.eventBeaconName.textContent = selectedEvent.event_name;
+  els.eventBeaconMeta.textContent = `Locked to ${summarizePipeTags(selectedEvent.tags)}`;
 }
 
 function clearEventTagsInputError() {
@@ -428,6 +454,7 @@ async function validateAndSaveSelectedEventTags() {
     state.events[idx] = data;
   }
   clearEventTagsInputError();
+  renderEventBeacon();
   setStatus(`Saved tags for ${data.event_name}.`);
   await loadRows();
 }

@@ -1,3 +1,9 @@
+import {
+  applyEventTheme,
+  DEFAULT_EVENT_ACCENT,
+  summarizePipeTags,
+} from './event_theme.js';
+
 const state = {
   rows: [],
   filteredRows: [],
@@ -30,6 +36,8 @@ const els = {
   themeFilter: document.getElementById('theme-filter'),
   progressCounter: document.getElementById('progress-counter'),
   teamAdminNotesInput: document.getElementById('team-admin-notes-input'),
+  eventBeaconName: document.getElementById('event-beacon-name'),
+  eventBeaconMeta: document.getElementById('event-beacon-meta'),
 };
 
 init();
@@ -84,6 +92,7 @@ function wireEvents() {
   });
   els.eventFilter.addEventListener('change', () => {
     if (guardDirtyRow('changing filters')) return;
+    renderEventBeacon();
     applyFilters();
   });
   els.themeFilter.addEventListener('change', () => {
@@ -160,9 +169,33 @@ async function loadEvents() {
     const res = await fetch('/api/events');
     state.events = (await res.json()) || [];
     populateEventFilter();
+    renderEventBeacon();
   } catch (err) {
     console.error('Error loading events:', err);
   }
+}
+
+function getSelectedEventDefinition() {
+  const selected = els.eventFilter?.value || '';
+  if (!selected) return null;
+  return state.events.find((entry) => entry.event_name === selected) || null;
+}
+
+function renderEventBeacon() {
+  const selectedEvent = getSelectedEventDefinition();
+  const accent = selectedEvent?.theme_accent_hex || DEFAULT_EVENT_ACCENT;
+  applyEventTheme(accent);
+
+  if (!els.eventBeaconName || !els.eventBeaconMeta) return;
+
+  if (!selectedEvent) {
+    els.eventBeaconName.textContent = 'ALL EVENTS';
+    els.eventBeaconMeta.textContent = 'Scope open across all active event rows.';
+    return;
+  }
+
+  els.eventBeaconName.textContent = selectedEvent.event_name;
+  els.eventBeaconMeta.textContent = `Locked to ${summarizePipeTags(selectedEvent.tags)}`;
 }
 
 async function loadThemes() {
