@@ -184,10 +184,10 @@ function populateEventFilter() {
   const options = state.events
     .filter((e) => String(e.event_name || '').trim() && e.event_name !== 'All')
     .map((e) => {
-    const opt = document.createElement('option');
-    opt.value = e.event_name;
-    opt.textContent = e.event_name;
-    return opt;
+      const opt = document.createElement('option');
+      opt.value = e.event_name;
+      opt.textContent = e.event_name;
+      return opt;
     });
 
   els.eventFilter.innerHTML = '<option value="">SELECT EVENT</option>';
@@ -287,13 +287,16 @@ function renderRows() {
   for (const boxKey of sortedBoxKeys) {
     const itemsInBox = groupsByBox[boxKey];
     const firstRow = itemsInBox[0];
-    const itemCount = itemsInBox.length;
     const boxNumber = normalizeBoxValue(firstRow.box_number || '');
     const rawLabel = String(firstRow.box_label || '').trim();
     const boxLabel = (rawLabel && rawLabel !== 'LABEL_PENDING') ? rawLabel : '';
-    const headerLine = boxLabel
+    const locationLabel = String(firstRow.storage_location || '').trim().toUpperCase();
+    const baseHeaderLine = boxLabel
       ? `${escapeHtml(boxNumber)} — <span>${escapeHtml(boxLabel)}</span>`
       : escapeHtml(boxNumber);
+    const headerLine = locationLabel
+      ? `${baseHeaderLine} in <span class="box-header-location">${escapeHtml(locationLabel)}</span>`
+      : baseHeaderLine;
     // Create collapsible box header row (collapsed on first render)
     const headerTr = document.createElement('tr');
     headerTr.classList.add('box-group-header');
@@ -301,15 +304,13 @@ function renderRows() {
       headerTr.classList.add('is-dirty-box');
     }
     headerTr.dataset.boxKey = boxKey;
-    headerTr.dataset.itemCount = itemCount;
+    headerTr.dataset.itemCount = String(itemsInBox.length);
 
     headerTr.innerHTML = `
       <td colspan="10" class="box-header-cell">
         <button class="box-group-toggle" type="button" data-box-key="${escapeHtml(boxKey)}" aria-expanded="false" title="Open box">
           <span class="box-toggle-icon">▶</span>
-          <span class="box-toggle-label">OPEN BOX</span>
           <span class="box-header-display">${headerLine}</span>
-          <span class="box-item-count">[${itemCount} ${itemCount === 1 ? 'item' : 'items'}]</span>
         </button>
       </td>
     `;

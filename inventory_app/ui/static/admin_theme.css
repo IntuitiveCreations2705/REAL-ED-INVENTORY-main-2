@@ -1335,6 +1335,10 @@ select:disabled {
   line-height: 1.2;
 }
 
+.box-header-location {
+  color: var(--event-accent-soft);
+}
+
 .box-header-label {
   display: block;
   font-size: 0.82rem;
