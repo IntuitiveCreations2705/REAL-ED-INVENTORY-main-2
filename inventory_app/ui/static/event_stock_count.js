@@ -287,6 +287,7 @@ function renderRows() {
   for (const boxKey of sortedBoxKeys) {
     const itemsInBox = groupsByBox[boxKey];
     const firstRow = itemsInBox[0];
+    const itemCount = itemsInBox.length;
     const boxNumber = normalizeBoxValue(firstRow.box_number || '');
     const rawLabel = String(firstRow.box_label || '').trim();
     const boxLabel = (rawLabel && rawLabel !== 'LABEL_PENDING') ? rawLabel : '';
@@ -304,13 +305,21 @@ function renderRows() {
       headerTr.classList.add('is-dirty-box');
     }
     headerTr.dataset.boxKey = boxKey;
-    headerTr.dataset.itemCount = String(itemsInBox.length);
+    headerTr.dataset.itemCount = String(itemCount);
 
     headerTr.innerHTML = `
       <td colspan="10" class="box-header-cell">
         <button class="box-group-toggle" type="button" data-box-key="${escapeHtml(boxKey)}" aria-expanded="false" title="Open box">
-          <span class="box-toggle-icon">▶</span>
-          <span class="box-header-display">${headerLine}</span>
+          <span class="box-header-mini">
+            <span class="box-header-merged">
+              <span class="box-toggle-icon">▶</span>
+              BOX SUMMARY
+            </span>
+            <span class="box-header-col-head">BOX</span>
+            <span class="box-header-col-head box-header-col-head--right">ITEMS</span>
+            <span class="box-header-display">${headerLine}</span>
+            <span class="box-item-count">[${itemCount} ${itemCount === 1 ? 'item' : 'items'}]</span>
+          </span>
         </button>
       </td>
     `;
@@ -323,26 +332,15 @@ function renderRows() {
       itemTr.dataset.boxKey = boxKey;
       itemTr.dataset.rowId = String(row.row_id || '');
 
-      const crewNotes = normalizeLegacyNoteValue(row.crew_notes);
-      const restockComments = normalizeLegacyNoteValue(row.restock_comments);
-
       const dirtyEdits = getDirtyEditsForRow(Number(row.row_id));
       const qtyRequired = dirtyEdits.qty_required ?? row.qty_required ?? 0;
       const stockOnHand = dirtyEdits.stock_on_hand ?? row.stock_on_hand ?? 0;
-      const qtyFlagLimit = dirtyEdits.qty_flag_limit ?? row.qty_flag_limit ?? 0;
-      const orderStockQty = dirtyEdits.order_stock_qty ?? row.order_stock_qty ?? 0;
 
       itemTr.innerHTML = `
-        <td class="mono box-item-indent">${escapeHtml((row.box_number || '').trim().toUpperCase())}</td>
-        <td class="mono">${escapeHtml((row.storage_location || '').toUpperCase())}</td>
-        <td class="col-description">${escapeHtml(row.description || '')}</td>
-        <td class="mono">${escapeHtml(String(qtyRequired))}</td>
-        <td class="mono"><input class="row-edit-input" data-row-id="${row.row_id}" data-field="stock_on_hand" type="number" step="1" min="0" value="${escapeHtml(String(stockOnHand))}" /></td>
-        <td class="mono">${escapeHtml(String(qtyFlagLimit))}</td>
-        <td class="mono">${escapeHtml(String(orderStockQty))}</td>
-        <td class="note-cell">${renderExpandableNoteCell('Crew Notes', crewNotes)}</td>
-        <td class="note-cell">${renderExpandableNoteCell('Restock Comments', restockComments)}</td>
-        <td class="mono box-row-action"><button class="btn save-row-btn" type="button" data-row-id="${row.row_id}">Save</button></td>
+        <td class="col-description col-mvp-description" colspan="6">${escapeHtml(row.description || '')}</td>
+        <td class="mono col-mvp-qty" colspan="1">${escapeHtml(String(qtyRequired))}</td>
+        <td class="mono col-mvp-stock" colspan="1"><input class="row-edit-input" data-row-id="${row.row_id}" data-field="stock_on_hand" type="number" step="1" min="0" value="${escapeHtml(String(stockOnHand))}" /></td>
+        <td class="mono box-row-action col-mvp-action" colspan="2"><button class="btn save-row-btn" type="button" data-row-id="${row.row_id}">Save</button></td>
       `;
       els.body.appendChild(itemTr);
     }
@@ -450,7 +448,7 @@ async function saveRow(rowId) {
 function guardDirtyRow(actionLabel = 'continuing') {
   if (!hasDirtyBox()) return false;
   flashDirtyRow();
-  setStatus(`Save pending rows in box ${dirtyState.boxKey} before ${actionLabel}.`, true);
+  setStatus(`NO PROCEED: save pending rows in BOX ${dirtyState.boxKey} before ${actionLabel}.`, true);
   return true;
 }
 
@@ -508,8 +506,6 @@ function wireBoxGroupToggles() {
         headerRow.classList.remove('is-expanded');
         toggle.setAttribute('aria-expanded', 'false');
         toggle.querySelector('.box-toggle-icon').textContent = '▶';
-        const label = toggle.querySelector('.box-toggle-label');
-        if (label) label.textContent = 'OPEN BOX';
         toggle.setAttribute('title', 'Open box');
         itemRows.forEach((row) => row.classList.remove('is-visible'));
       } else {
@@ -517,8 +513,6 @@ function wireBoxGroupToggles() {
         headerRow.classList.add('is-expanded');
         toggle.setAttribute('aria-expanded', 'true');
         toggle.querySelector('.box-toggle-icon').textContent = '▼';
-        const label = toggle.querySelector('.box-toggle-label');
-        if (label) label.textContent = 'CLOSE BOX';
         toggle.setAttribute('title', 'Close box');
         itemRows.forEach((row) => row.classList.add('is-visible'));
       }

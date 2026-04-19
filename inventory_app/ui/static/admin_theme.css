@@ -1287,9 +1287,6 @@ select:disabled {
 }
 
 .box-header-cell {
-  display: flex;
-  align-items: center;
-  gap: 12px;
   padding: 12px 16px !important;
   text-align: left;
   vertical-align: middle;
@@ -1309,6 +1306,42 @@ select:disabled {
   cursor: pointer;
   text-align: left;
   transition: color 0.18s ease;
+}
+
+.box-header-mini {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  width: 100%;
+}
+
+.box-header-merged {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--event-accent) 42%, var(--border));
+  border-radius: 8px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--event-accent-soft);
+  background: color-mix(in srgb, var(--event-accent) 14%, transparent);
+}
+
+.box-header-col-head {
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  align-self: end;
+}
+
+.box-header-col-head--right {
+  text-align: right;
 }
 
 .box-group-toggle:hover {
@@ -1856,5 +1889,134 @@ tbody tr.row-dirty-flash {
 
   .stock-count-table {
     min-width: 820px;
+  }
+}
+
+/* ── iPad MVP pass rules — 768px baseline (stock-count only) ────────────── */
+/* Pass criteria:
+   1. Viewport fits within 768px — no forced horizontal scroll
+   2. Box header text (boxNumber — boxName in LOCATION) does not clip
+   3. Touch targets remain >= 40px
+   4. Accordion expand/collapse remains operable
+   5. All rules scoped to .stock-count-shell — Admin Master unaffected        */
+
+@media (max-width: 768px) {
+  .stock-count-shell {
+    width: 100%;
+    min-width: 0;
+    padding: 6px;
+    overflow-x: hidden;
+  }
+
+  .stock-count-shell .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .stock-count-shell .stock-count-table {
+    min-width: 760px;
+  }
+
+  .stock-count-shell .stock-count-table thead {
+    display: none;
+  }
+
+  /* Reset legacy fixed nth-child widths for this 4-cell MVP row layout */
+  .stock-count-shell .stock-count-table tr.box-group-header td,
+  .stock-count-shell .stock-count-table tr.box-group-item td {
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .stock-count-shell .stock-count-table tr.box-group-item td.col-mvp-description {
+    width: 64%;
+    min-width: 0;
+  }
+
+  .stock-count-shell .stock-count-table tr.box-group-item td.col-mvp-qty {
+    width: 10%;
+    min-width: 64px;
+    text-align: center;
+  }
+
+  .stock-count-shell .stock-count-table tr.box-group-item td.col-mvp-stock {
+    width: 12%;
+    min-width: 86px;
+    text-align: center;
+  }
+
+  .stock-count-shell .stock-count-table tr.box-group-item td.col-mvp-action {
+    width: 14%;
+    min-width: 92px;
+    text-align: center;
+  }
+
+  /* Neutralize legacy global nth-child rules for expanded 4-cell rows */
+  .stock-count-shell .stock-count-table tr.box-group-item td {
+    padding-left: 6px;
+    padding-right: 6px;
+    font-size: inherit;
+  }
+
+  .stock-count-shell .stock-count-table tr.box-group-item td.col-mvp-stock,
+  .stock-count-shell .stock-count-table tr.box-group-item td.col-mvp-stock input {
+    font-size: inherit;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  /* Give toggle button room to breathe vertically when text wraps */
+  .stock-count-shell .box-group-toggle {
+    align-items: stretch;
+    padding: 4px 0;
+    min-height: var(--touch-target);
+    display: block;
+  }
+
+  .stock-count-shell .box-header-mini {
+    grid-template-columns: minmax(0, 1fr) max-content;
+    gap: 6px 8px;
+  }
+
+  .stock-count-shell .box-header-display {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: visible;
+    text-overflow: clip;
+    padding-right: 6px;
+  }
+
+  .stock-count-shell .box-item-count {
+    margin-left: 0;
+    white-space: nowrap;
+    text-align: right;
+    justify-self: end;
+    align-self: start;
+  }
+
+  /* Touch target floor on save button */
+  .stock-count-shell .save-row-btn {
+    min-height: var(--touch-target);
+    min-width: 64px;
+  }
+
+  /* Stack controls single column */
+  .stock-count-shell .controls {
+    grid-template-columns: 1fr;
+  }
+
+  /* Tighten header layout for narrow viewport */
+  .stock-count-shell .stock-count-header {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .stock-count-shell .stock-count-col-right {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
   }
 }
