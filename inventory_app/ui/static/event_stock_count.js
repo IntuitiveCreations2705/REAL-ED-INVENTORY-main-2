@@ -10,7 +10,6 @@ const state = {
   knownBoxes: [],
   knownLocations: [],
   events: [],
-  themes: [],
   stockNullNormalizedCount: 0,
 };
 
@@ -33,11 +32,8 @@ const els = {
   locationFilter: document.getElementById('location-filter'),
   locationFilterOptions: document.getElementById('location-filter-options'),
   eventFilter: document.getElementById('event-filter'),
-  themeFilter: document.getElementById('theme-filter'),
   progressCounter: document.getElementById('progress-counter'),
   teamAdminNotesInput: document.getElementById('team-admin-notes-input'),
-  eventBeaconName: document.getElementById('event-beacon-name'),
-  eventBeaconMeta: document.getElementById('event-beacon-meta'),
 };
 
 init();
@@ -45,7 +41,6 @@ init();
 async function init() {
   wireEvents();
   await loadEvents();
-  await loadThemes();
   await loadRows();
   await loadTeamAdminNotes();
 }
@@ -57,7 +52,6 @@ function wireEvents() {
     resetFilters();
     resetNotesPanel();
     await loadEvents();
-    await loadThemes();
     await loadRows();
     await loadTeamAdminNotes();
   });
@@ -92,11 +86,7 @@ function wireEvents() {
   });
   els.eventFilter.addEventListener('change', () => {
     if (guardDirtyRow('changing filters')) return;
-    renderEventBeacon();
-    applyFilters();
-  });
-  els.themeFilter.addEventListener('change', () => {
-    if (guardDirtyRow('changing filters')) return;
+    renderStockCountScope();
     applyFilters();
   });
 
@@ -157,7 +147,7 @@ function resetFilters() {
   if (els.searchDescription) els.searchDescription.value = '';
   if (els.boxFilter) els.boxFilter.value = '';
   if (els.locationFilter) els.locationFilter.value = '';
-  // eventFilter and themeFilter are intentionally preserved on refresh
+  // eventFilter intentionally preserved on refresh
 }
 
 function resetNotesPanel() {
@@ -169,7 +159,7 @@ async function loadEvents() {
     const res = await fetch('/api/events');
     state.events = (await res.json()) || [];
     populateEventFilter();
-    renderEventBeacon();
+    renderStockCountScope();
   } catch (err) {
     console.error('Error loading events:', err);
   }
@@ -181,77 +171,32 @@ function getSelectedEventDefinition() {
   return state.events.find((entry) => entry.event_name === selected) || null;
 }
 
-function renderEventBeacon() {
+function renderStockCountScope() {
   const selectedEvent = getSelectedEventDefinition();
   const accent = selectedEvent?.theme_accent_hex || DEFAULT_EVENT_ACCENT;
   applyEventTheme(accent);
-
-  if (!els.eventBeaconName || !els.eventBeaconMeta) return;
-
-  if (!selectedEvent) {
-    els.eventBeaconName.textContent = 'ALL EVENTS';
-    els.eventBeaconMeta.textContent = 'Scope open across all active event rows.';
-    return;
-  }
-
-  els.eventBeaconName.textContent = selectedEvent.event_name;
-  els.eventBeaconMeta.textContent = `Locked to ${summarizePipeTags(selectedEvent.tags)}`;
-}
-
-async function loadThemes() {
-  try {
-    const res = await fetch('/api/themes');
-    if (res.ok) {
-      state.themes = (await res.json()) || [];
-      populateThemeFilter();
-    }
-  } catch (err) {
-    // Themes endpoint not available yet
-    console.warn('Themes endpoint not available:', err);
-  }
 }
 
 function populateEventFilter() {
   if (!els.eventFilter) return;
   const previous = els.eventFilter.value;
 
-  const options = state.events.map((e) => {
+  const options = state.events
+    .filter((e) => String(e.event_name || '').trim() && e.event_name !== 'All')
+    .map((e) => {
     const opt = document.createElement('option');
     opt.value = e.event_name;
     opt.textContent = e.event_name;
     return opt;
-  });
+    });
 
-  const existing = els.eventFilter.querySelectorAll('option:not([value=""])');
-  existing.forEach((opt) => opt.remove());
+  els.eventFilter.innerHTML = '<option value="">SELECT EVENT</option>';
 
   options.forEach((opt) => els.eventFilter.appendChild(opt));
 
   // Restore previous selection if it still exists in the refreshed list
-  if (previous && state.events.some((e) => e.event_name === previous)) {
+  if (previous && state.events.some((e) => e.event_name === previous && e.event_name !== 'All')) {
     els.eventFilter.value = previous;
-  }
-}
-
-function populateThemeFilter() {
-  if (!els.themeFilter) return;
-  const previous = els.themeFilter.value;
-
-  const options = state.themes.map((t) => {
-    const opt = document.createElement('option');
-    opt.value = t.theme_name;
-    opt.textContent = t.theme_name;
-    return opt;
-  });
-
-  const existing = els.themeFilter.querySelectorAll('option:not([value=""])');
-  existing.forEach((opt) => opt.remove());
-
-  options.forEach((opt) => els.themeFilter.appendChild(opt));
-
-  // Restore previous selection if it still exists in the refreshed list
-  if (previous && state.themes.some((t) => t.theme_name === previous)) {
-    els.themeFilter.value = previous;
   }
 }
 
@@ -296,23 +241,25 @@ function applyFilters() {
   const box = normalizeBoxValue(els.boxFilter.value || '');
   const boxKey = canonicalBoxKey(box);
   const location = (els.locationFilter.value || '').trim().toUpperCase();
-  const event = els.eventFilter.value;
-  const theme = els.themeFilter.value;
-  const selectedEvent = state.events.find((entry) => entry.event_name === event);
+  const selectedEvent = getSelectedEventDefinition();
   const selectedEventTags = selectedEvent ? parsePipeTags(selectedEvent.tags) : [];
+
+  if (!selectedEvent) {
+    state.filteredRows = [];
+    updateProgress();
+    renderRows();
+    return;
+  }
 
   state.filteredRows = state.rows.filter((r) => {
     if (desc && !(r.description || '').toLowerCase().includes(desc)) return false;
     if (boxKey && canonicalBoxKey(r.box_number) !== boxKey) return false;
     if (location && (r.storage_location || '').trim().toUpperCase() !== location) return false;
-    if (event && event !== 'All') {
-      const rowTags = parsePipeTags(r.event_tags);
-      const matchesEvent = selectedEventTags.length
-        ? selectedEventTags.some((tag) => rowTags.includes(tag))
-        : false;
-      if (!matchesEvent) return false;
-    }
-    if (theme && r.theme_name !== theme) return false;
+    const rowTags = parsePipeTags(r.event_tags);
+    const matchesEvent = selectedEventTags.length
+      ? selectedEventTags.some((tag) => rowTags.includes(tag))
+      : false;
+    if (!matchesEvent) return false;
     return true;
   });
 
@@ -401,12 +348,16 @@ function renderRows() {
   }
 
   if (!state.filteredRows.length) {
+    if (!getSelectedEventDefinition()) {
+      setTableState('empty', 'Select Event to begin stock count.');
+      return;
+    }
+
     const hasFilters = [
       els.searchDescription?.value,
       els.boxFilter?.value,
       els.locationFilter?.value,
       els.eventFilter?.value,
-      els.themeFilter?.value,
     ].some((v) => (v || '').trim());
     const msg = hasFilters
       ? 'No active rows match the current filters. Try clearing filters or selecting a different event.'
@@ -678,6 +629,10 @@ function syncDirtyUi() {
 
 function updateProgress() {
   if (!els.progressCounter) return;
+  if (!getSelectedEventDefinition()) {
+    els.progressCounter.textContent = 'Select Event to begin';
+    return;
+  }
   els.progressCounter.textContent = `Showing ${state.filteredRows.length} of ${state.rows.length}`;
 }
 
