@@ -1655,16 +1655,18 @@ select:disabled {
 
 .team-admin-notes-input {
   width: 100%;
-  min-height: 120px;
+  height: 59px;
+  min-height: 59px;
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-soft);
   color: var(--text);
   font-family: var(--font);
-  font-size: 0.9rem;
+  font-size: 12.16px;
   line-height: 1.5;
-  resize: vertical;
+  resize: none;
+  overflow-y: hidden;
   transition: border-color 0.2s ease;
 }
 

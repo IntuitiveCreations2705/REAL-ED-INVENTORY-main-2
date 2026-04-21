@@ -21,6 +21,7 @@ const dirtyState = {
 const MAX_NOTE_LENGTH = 200;
 const PREVIEW_NOTE_LENGTH = 50;
 const STOCK_EDITABLE_FIELD = 'stock_on_hand';
+const TEAM_ADMIN_NOTES_MAX_LENGTH = 200;
 
 const els = {
   body: document.getElementById('rows-body'),
@@ -103,9 +104,20 @@ function wireEvents() {
   document.addEventListener('click', handlePotentialExportClick, true);
 
   if (els.teamAdminNotesInput) {
-    els.teamAdminNotesInput.addEventListener('input', debounce((e) => {
-      saveTeamAdminNotesGlobal(e.target.value);
-    }, 1000));
+    const debouncedSaveTeamAdminNotes = debounce((value) => {
+      saveTeamAdminNotesGlobal(value);
+    }, 1000);
+
+    els.teamAdminNotesInput.addEventListener('input', (e) => {
+      const input = e.target;
+      if (!(input instanceof HTMLTextAreaElement)) return;
+      const constrained = constrainTeamAdminNotes(input.value);
+      if (constrained !== input.value) {
+        input.value = constrained;
+      }
+      autoSizeTeamAdminNotesInput();
+      debouncedSaveTeamAdminNotes(constrained);
+    });
   }
 }
 
@@ -800,12 +812,30 @@ function closeAllExpandedNotes() {
   });
 }
 
+function constrainTeamAdminNotes(value) {
+  return String(value ?? '').slice(0, TEAM_ADMIN_NOTES_MAX_LENGTH);
+}
+
+function autoSizeTeamAdminNotesInput() {
+  const input = els.teamAdminNotesInput;
+  if (!input) return;
+
+  const styles = window.getComputedStyle(input);
+  const lineHeight = Number.parseFloat(styles.lineHeight) || 18.24;
+  const minHeight = (lineHeight * 2) + 22;
+
+  input.style.height = 'auto';
+  const withSpareLine = input.scrollHeight + lineHeight;
+  input.style.height = `${Math.ceil(Math.max(minHeight, withSpareLine))}px`;
+}
+
 async function saveTeamAdminNotesGlobal(notes) {
+  const constrained = constrainTeamAdminNotes(notes);
   try {
     const res = await fetch('/api/ui-rules/team-admin-notes', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ notes }),
+      body: JSON.stringify({ notes: constrained }),
     });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
@@ -826,10 +856,12 @@ async function loadTeamAdminNotes() {
       throw new Error(`HTTP ${res.status}`);
     }
     const payload = await res.json();
-    els.teamAdminNotesInput.value = payload.notes || '';
+    els.teamAdminNotesInput.value = constrainTeamAdminNotes(payload.notes || '');
+    autoSizeTeamAdminNotesInput();
   } catch (err) {
     console.error('Error loading team admin notes:', err);
     els.teamAdminNotesInput.value = '';
+    autoSizeTeamAdminNotesInput();
   }
 }
 
