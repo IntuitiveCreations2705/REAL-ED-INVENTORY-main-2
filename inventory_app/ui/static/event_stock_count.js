@@ -32,6 +32,8 @@ const els = {
   locationFilter: document.getElementById('location-filter'),
   locationFilterOptions: document.getElementById('location-filter-options'),
   eventFilter: document.getElementById('event-filter'),
+  eventBeaconName: document.getElementById('event-beacon-name'),
+  eventBeaconMeta: document.getElementById('event-beacon-meta'),
   progressCounter: document.getElementById('progress-counter'),
   teamAdminNotesInput: document.getElementById('team-admin-notes-input'),
 };
@@ -175,6 +177,17 @@ function renderStockCountScope() {
   const selectedEvent = getSelectedEventDefinition();
   const accent = selectedEvent?.theme_accent_hex || DEFAULT_EVENT_ACCENT;
   applyEventTheme(accent);
+
+  if (!els.eventBeaconName || !els.eventBeaconMeta) return;
+
+  if (!selectedEvent) {
+    els.eventBeaconName.textContent = 'SELECT EVENT';
+    els.eventBeaconMeta.textContent = 'Select Event to begin stock count.';
+    return;
+  }
+
+  els.eventBeaconName.textContent = selectedEvent.event_name;
+  els.eventBeaconMeta.textContent = `Locked to ${summarizePipeTags(selectedEvent.tags)}`;
 }
 
 function populateEventFilter() {
@@ -295,9 +308,7 @@ function renderRows() {
     const baseHeaderLine = boxLabel
       ? `${escapeHtml(boxNumber)} — <span>${escapeHtml(boxLabel)}</span>`
       : escapeHtml(boxNumber);
-    const headerLine = locationLabel
-      ? `${baseHeaderLine} in <span class="box-header-location">${escapeHtml(locationLabel)}</span>`
-      : baseHeaderLine;
+    const headerLine = baseHeaderLine;
     // Create collapsible box header row (collapsed on first render)
     const headerTr = document.createElement('tr');
     headerTr.classList.add('box-group-header');
@@ -313,12 +324,9 @@ function renderRows() {
           <span class="box-header-mini">
             <span class="box-header-merged">
               <span class="box-toggle-icon">▶</span>
-              BOX SUMMARY
+              <span class="box-header-display">${headerLine}</span>
             </span>
-            <span class="box-header-col-head">BOX</span>
-            <span class="box-header-col-head box-header-col-head--right">ITEMS</span>
-            <span class="box-header-display">${headerLine}</span>
-            <span class="box-item-count">[${itemCount} ${itemCount === 1 ? 'item' : 'items'}]</span>
+            <span class="box-header-col-head box-header-col-head--right">${escapeHtml(locationLabel)}</span>
           </span>
         </button>
       </td>
@@ -625,7 +633,7 @@ function syncDirtyUi() {
 function updateProgress() {
   if (!els.progressCounter) return;
   if (!getSelectedEventDefinition()) {
-    els.progressCounter.textContent = 'Select Event to begin';
+    els.progressCounter.textContent = '';
     return;
   }
   els.progressCounter.textContent = `Showing ${state.filteredRows.length} of ${state.rows.length}`;

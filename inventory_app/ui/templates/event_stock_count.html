@@ -20,14 +20,19 @@
           <select id="event-filter" class="stock-count-event-select">
             <option value="">SELECT EVENT</option>
           </select>
-        </div>
-
-        <div class="stock-count-col-right">
-          <div id="progress-counter" class="progress-counter"></div>
           <div class="header-actions">
             <a class="btn secondary btn-link" href="{{ url_for('index') }}">Admin Master</a>
             <button id="refresh-btn" class="btn secondary">Refresh</button>
           </div>
+        </div>
+
+        <div class="stock-count-col-right">
+          <aside id="event-beacon" class="event-beacon" aria-live="polite">
+            <span class="event-beacon-label">Event Scope</span>
+            <strong id="event-beacon-name">SELECT EVENT</strong>
+            <span id="event-beacon-meta" class="event-beacon-meta">Select Event to begin stock count.</span>
+          </aside>
+          <div id="progress-counter" class="progress-counter"></div>
         </div>
       </header>
 
@@ -64,16 +69,16 @@
       <table class="stock-count-table">
         <thead>
           <tr>
-            <th>Box</th>
-            <th>Location</th>
-            <th class="col-description">Description</th>
-            <th>Qty Req</th>
-            <th>Stock</th>
-            <th>Qty Flag Limit</th>
-            <th>Order Stock Qty</th>
-            <th>Crew Notes</th>
-            <th>Restock Comments</th>
-            <th>Action</th>
+            <th>BOX</th>
+            <th></th>
+            <th class="col-description"></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th>LOCATION</th>
           </tr>
         </thead>
         <tbody id="rows-body"></tbody>
