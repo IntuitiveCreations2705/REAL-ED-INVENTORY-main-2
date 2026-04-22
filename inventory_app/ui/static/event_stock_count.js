@@ -189,17 +189,23 @@ function renderStockCountScope() {
   const selectedEvent = getSelectedEventDefinition();
   const accent = selectedEvent?.theme_accent_hex || DEFAULT_EVENT_ACCENT;
   applyEventTheme(accent);
+  setEventChooserWaitingState(!selectedEvent);
 
   if (!els.eventBeaconName || !els.eventBeaconMeta) return;
 
   if (!selectedEvent) {
-    els.eventBeaconName.textContent = 'SELECT EVENT';
+    els.eventBeaconName.textContent = '';
     els.eventBeaconMeta.textContent = 'Select Event to begin stock count.';
     return;
   }
 
   els.eventBeaconName.textContent = selectedEvent.event_name;
   els.eventBeaconMeta.textContent = `Locked to ${summarizePipeTags(selectedEvent.tags)}`;
+}
+
+function setEventChooserWaitingState(isWaiting) {
+  if (!els.eventFilter) return;
+  els.eventFilter.classList.toggle('is-waiting-event', Boolean(isWaiting));
 }
 
 function populateEventFilter() {
@@ -215,7 +221,7 @@ function populateEventFilter() {
       return opt;
     });
 
-  els.eventFilter.innerHTML = '<option value="">SELECT EVENT</option>';
+  els.eventFilter.innerHTML = '<option value="">WHICH EVENT AM I HELPING YOU WITH</option>';
 
   options.forEach((opt) => els.eventFilter.appendChild(opt));
 
@@ -345,6 +351,17 @@ function renderRows() {
     `;
     els.body.appendChild(headerTr);
 
+    const subheadTr = document.createElement('tr');
+    subheadTr.classList.add('box-group-subhead');
+    subheadTr.dataset.boxKey = boxKey;
+    subheadTr.innerHTML = `
+      <td class="box-subhead-cell box-subhead-cell--description" colspan="6">ITEM DESCRIPTION</td>
+      <td class="box-subhead-cell box-subhead-cell--qty" colspan="1">QTY REQD</td>
+      <td class="box-subhead-cell box-subhead-cell--stock" colspan="1">QTY IN BOX</td>
+      <td class="box-subhead-cell box-subhead-cell--action" colspan="2">ACTION</td>
+    `;
+    els.body.appendChild(subheadTr);
+
     // Create item rows under this box (hidden by default)
     for (const row of itemsInBox) {
       const itemTr = document.createElement('tr');
@@ -404,6 +421,10 @@ function handleRowSaveClick(event) {
   const rowBoxKey = canonicalBoxKey(row.box_number);
   if (hasDirtyBox() && canonicalBoxKey(dirtyState.boxKey) !== rowBoxKey) {
     guardDirtyRow('saving another box');
+    return;
+  }
+  if (hasDirtyBox() && !dirtyState.editsByRow[String(rowId)]) {
+    guardDirtyRow('saving a different item — save the highlighted item first');
     return;
   }
 
@@ -506,7 +527,7 @@ function wireBoxGroupToggles() {
 
       const boxKey = toggle.dataset.boxKey;
       const headerRow = toggle.closest('.box-group-header');
-      const itemRows = els.body.querySelectorAll(`.box-group-item[data-box-key="${boxKey}"]`);
+      const detailRows = els.body.querySelectorAll(`.box-group-subhead[data-box-key="${boxKey}"], .box-group-item[data-box-key="${boxKey}"]`);
 
       if (hasDirtyBox()) {
         if (dirtyState.boxKey !== boxKey) {
@@ -527,14 +548,14 @@ function wireBoxGroupToggles() {
         toggle.setAttribute('aria-expanded', 'false');
         toggle.querySelector('.box-toggle-icon').textContent = '▶';
         toggle.setAttribute('title', 'Open box');
-        itemRows.forEach((row) => row.classList.remove('is-visible'));
+        detailRows.forEach((row) => row.classList.remove('is-visible'));
       } else {
         // Expand
         headerRow.classList.add('is-expanded');
         toggle.setAttribute('aria-expanded', 'true');
         toggle.querySelector('.box-toggle-icon').textContent = '▼';
         toggle.setAttribute('title', 'Close box');
-        itemRows.forEach((row) => row.classList.add('is-visible'));
+        detailRows.forEach((row) => row.classList.add('is-visible'));
       }
     });
   });
@@ -577,6 +598,13 @@ function handleRowFieldInput(event) {
 
   if (hasDirtyBox() && dirtyState.boxKey !== rowBoxKey) {
     guardDirtyRow('editing another box');
+    return;
+  }
+  if (hasDirtyBox() && !dirtyState.editsByRow[String(rowId)]) {
+    guardDirtyRow('editing a different item — save the highlighted item first');
+    // Revert input to last saved value
+    const origRow = state.rows.find((r) => Number(r.row_id) === rowId);
+    if (origRow) input.value = String(origRow[input.dataset.field] ?? 0);
     return;
   }
 

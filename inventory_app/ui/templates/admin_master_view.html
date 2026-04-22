@@ -15,71 +15,73 @@
         <div class="header-copy">
           <h1>Admin Master Inventory</h1>
           <p>Live DB view with integrity-enforced editing.</p>
-          <div id="progress-counter" class="progress-counter"></div>
           <!-- [ PHASE 2 RESERVED ] Role selector / scope indicator badge will be inserted here -->
           <!-- Use this space for: Tier 2.2 role specialization selector, device/BOX scope display -->
         </div>
-        <div class="header-summary">
+        <div class="master-header-col-right">
           <aside id="event-beacon" class="event-beacon" aria-live="polite">
             <span class="event-beacon-label">Event Scope</span>
-            <strong id="event-beacon-name">ALL EVENTS</strong>
-            <span id="event-beacon-meta" class="event-beacon-meta">Scope open across all event-linked rows.</span>
+            <strong id="event-beacon-name"></strong>
+            <span id="event-beacon-meta" class="event-beacon-meta">Select Event to begin stock count.</span>
           </aside>
+          <div id="progress-counter" class="progress-counter"></div>
+        </div>
+        <div class="header-summary"></div>
+        <div class="master-event-chooser-row" aria-live="polite">
+          <div class="master-event-chooser-box">
+            <label for="header-event-filter" class="master-event-chooser-label">Event Scope</label>
+            <select id="header-event-filter" class="master-event-select">
+              <option value="">WHICH EVENT AM I HELPING YOU WITH</option>
+            </select>
+          </div>
         </div>
         <div class="header-actions">
-          <a class="btn secondary btn-link" href="{{ url_for('item_list_page') }}">Item ID List Admin</a>
-          <a class="btn secondary btn-link" href="{{ url_for('event_stock_count_page') }}">Event Stock Count</a>
-          <a class="btn secondary btn-link" href="{{ url_for('system_map_page') }}" target="_blank"
-            rel="noreferrer">System Map</a>
-          <button id="add-row-btn" class="btn">Add Row</button>
-          <label for="theme-select">Theme</label>
-          <select id="theme-select">
-            <option value="default">Default</option>
-            <option value="high-contrast">High Contrast</option>
-            <option value="low-glare">Low Glare</option>
-          </select>
-          <button id="refresh-btn" class="btn secondary">Refresh</button>
+          <div class="header-action-group header-action-group--nav">
+            <a class="btn secondary btn-link" href="{{ url_for('item_list_page') }}">Item ID List Admin</a>
+            <a class="btn secondary btn-link" href="{{ url_for('event_stock_count_page') }}">Event Stock Count</a>
+            <a class="btn secondary btn-link" href="{{ url_for('system_map_page') }}" target="_blank"
+              rel="noreferrer">System Map</a>
+            <button id="add-row-btn" class="btn">Add Row</button>
+            <button id="refresh-btn" class="btn secondary">Refresh</button>
+          </div>
+          <div class="header-action-group header-action-group--placeholder">
+            <div class="header-action-control">
+              <label for="event-filter" class="header-action-label">Event</label>
+              <select id="event-filter" class="header-action-select header-action-select--event">
+                <option value="">EVERYTHING</option>
+              </select>
+            </div>
+          </div>
+          <div class="header-action-group header-action-group--controls">
+            <div class="header-action-control">
+              <label for="view-mode" class="header-action-label">View</label>
+              <select id="view-mode" class="header-action-select">
+                <option value="all" selected>All</option>
+                <option value="unlinked">Unlinked</option>
+                <option value="linked">Linked only</option>
+                <option value="active">Active only</option>
+                <option value="inactive">Inactive only</option>
+              </select>
+            </div>
+            <div class="header-action-control">
+              <label for="event-tags-editor" class="header-action-label">Event Tags</label>
+              <div class="header-action-tags-row">
+                <input id="event-tags-editor" type="text" placeholder="|NEEDED||RCP|" class="header-action-tags-input" />
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 
       <section class="card controls">
-        <div class="control">
-          <label for="search-item">Filter by Description</label>
-          <input id="search-item" type="text" placeholder="Type text from description column" />
-        </div>
-
-        <div class="control small">
-          <label for="view-mode">View mode</label>
-          <select id="view-mode">
-            <option value="all" selected>All</option>
-            <option value="unlinked">Unlinked (needs matching)</option>
-            <option value="linked">Linked only</option>
-            <option value="active">Active only</option>
-            <option value="inactive">Inactive only</option>
-          </select>
-        </div>
-
-        <div class="control small">
-          <label for="event-filter">Event</label>
-          <select id="event-filter">
-            <option value="">EVERYTHING</option>
-          </select>
-        </div>
-
-        <div class="control">
-          <label for="event-tags-editor">Selected Event Tags (Admin)</label>
-          <div class="event-tags-editor-row">
-            <input id="event-tags-editor" type="text" placeholder="|NEEDED||RCP|" />
-            <button id="event-tags-save-btn" class="btn" type="button">Validate + Save</button>
-          </div>
-          <p class="case-allowlist-help">
-            Edit only the selected event definition tags. Save is blocked until tags pass policy validation.
-          </p>
-        </div>
-
         <div class="control small">
           <label for="box-filter">Box filter</label>
           <input id="box-filter" type="text" list="box-filter-options" placeholder="e.g. A-01" />
+        </div>
+
+        <div class="control">
+          <label for="search-item">Filter by Description</label>
+          <input id="search-item" type="text" placeholder="Type text from description column" />
         </div>
 
         <div class="control small">

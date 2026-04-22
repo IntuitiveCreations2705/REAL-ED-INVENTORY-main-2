@@ -42,13 +42,13 @@ const els = {
   addRowBtn: document.getElementById('add-row-btn'),
   viewMode: document.getElementById('view-mode'),
   eventFilter: document.getElementById('event-filter'),
+  headerEventFilter: document.getElementById('header-event-filter'),
   boxFilter: document.getElementById('box-filter'),
   boxFilterOptions: document.getElementById('box-filter-options'),
   boxOptions: document.getElementById('box-options'),
   locationFilter: document.getElementById('location-filter'),
   locationFilterOptions: document.getElementById('location-filter-options'),
   searchItem: document.getElementById('search-item'),
-  themeSelect: document.getElementById('theme-select'),
   progressCounter: document.getElementById('progress-counter'),
   locationOptions: document.getElementById('location-options'),
   eventTagOptions: document.getElementById('event-tag-options'),
@@ -233,6 +233,28 @@ function wireEvents() {
     els.eventFilter.dataset.prevValue = els.eventFilter.value;
   });
 
+  if (els.headerEventFilter) {
+    els.headerEventFilter.addEventListener('focus', () => {
+      els.headerEventFilter.dataset.prevValue = els.headerEventFilter.value;
+    });
+
+    els.headerEventFilter.addEventListener('change', async () => {
+      if (guardDirtyRow()) {
+        els.headerEventFilter.value = els.headerEventFilter.dataset.prevValue || els.headerEventFilter.value;
+        return;
+      }
+
+      const nextValue = els.headerEventFilter.value || '';
+      els.eventFilter.value = nextValue;
+      els.eventFilter.dataset.prevValue = nextValue;
+      persistSessionFilters();
+      syncEventTagsEditor();
+      renderEventBeacon();
+      syncHeaderEventFilter();
+      await loadRows();
+    });
+  }
+
   els.eventFilter.addEventListener('change', async () => {
     if (guardDirtyRow()) {
       els.eventFilter.value = els.eventFilter.dataset.prevValue || els.eventFilter.value;
@@ -241,16 +263,13 @@ function wireEvents() {
     persistSessionFilters();
     syncEventTagsEditor();
     renderEventBeacon();
+    syncHeaderEventFilter();
     await loadRows();
   });
 
   els.searchItem.addEventListener('input', () => {
     if (guardDirtyRow()) return;
     applyFilters();
-  });
-
-  els.themeSelect.addEventListener('change', () => {
-    document.documentElement.dataset.theme = els.themeSelect.value;
   });
 
   if (els.caseAllowlistSaveBtn) {
@@ -312,11 +331,21 @@ async function loadEvents() {
   const previouslySelected = sessionStorage.getItem(SESSION_EVENT_KEY) || els.eventFilter.value;
 
   els.eventFilter.innerHTML = '<option value="">EVERYTHING</option>';
+  if (els.headerEventFilter) {
+    els.headerEventFilter.innerHTML = '<option value="">WHICH EVENT AM I HELPING YOU WITH</option>';
+  }
   for (const e of events) {
     const opt = document.createElement('option');
     opt.value = e.event_name;
     opt.textContent = e.event_name === 'All' ? 'ALL EVENTS' : e.event_name;
     els.eventFilter.appendChild(opt);
+
+    if (els.headerEventFilter) {
+      const headerOpt = document.createElement('option');
+      headerOpt.value = e.event_name;
+      headerOpt.textContent = e.event_name === 'All' ? 'ALL EVENTS' : e.event_name;
+      els.headerEventFilter.appendChild(headerOpt);
+    }
   }
 
   const eventNames = new Set(state.events.map((e) => e.event_name));
@@ -328,6 +357,19 @@ async function loadEvents() {
   syncEventTagsEditor();
   refreshEventTagOptions();
   renderEventBeacon();
+  syncHeaderEventFilter();
+}
+
+function syncHeaderEventFilter() {
+  if (!els.headerEventFilter) return;
+  els.headerEventFilter.value = els.eventFilter?.value || '';
+  els.headerEventFilter.dataset.prevValue = els.headerEventFilter.value;
+  setMasterEventChooserWaitingState(!els.headerEventFilter.value);
+}
+
+function setMasterEventChooserWaitingState(isWaiting) {
+  if (!els.headerEventFilter) return;
+  els.headerEventFilter.classList.toggle('is-waiting-event', Boolean(isWaiting));
 }
 
 async function loadEventTagCatalog() {
@@ -381,8 +423,8 @@ function renderEventBeacon() {
   if (!els.eventBeaconName || !els.eventBeaconMeta) return;
 
   if (!selectedEvent) {
-    els.eventBeaconName.textContent = 'ALL EVENTS';
-    els.eventBeaconMeta.textContent = 'Scope open across all event-linked rows.';
+    els.eventBeaconName.textContent = '';
+    els.eventBeaconMeta.textContent = 'Select Event to begin stock count.';
     return;
   }
 
