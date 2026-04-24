@@ -7,10 +7,11 @@ Never open sqlite3.connect() directly in route handlers.
 from __future__ import annotations
 
 import sqlite3
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DB_PATH = ROOT / "sql_inventory_master.db"
+DB_PATH = Path(os.getenv("INVENTORY_DB_PATH", str(ROOT / "sql_inventory_master.db"))).resolve()
 
 # Columns added in Phase 1 migration — used by check_schema()
 _REQUIRED_COLUMNS: dict[str, set[str]] = {

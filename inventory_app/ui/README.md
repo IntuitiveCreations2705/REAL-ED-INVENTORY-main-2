@@ -34,6 +34,9 @@ Integrity-first Admin UI wired directly to `sql_inventory_master.db`.
 ## Files
 - `app.py` — Flask backend + API
 - `run_admin.py` — app runner
+- `desktop_launcher.py` — one-click launcher entrypoint (starts server + opens browser)
+- `build_windows_exe.bat` — builds standalone Windows EXE launcher via PyInstaller
+- `run_admin_launcher.bat` — quick Windows source launcher (requires Python installed)
 - `templates/admin_master_view.html` — master view page
 - `static/admin_theme.css` — CSS tokens + presets
 - `static/admin_master_view.js` — UI behavior
@@ -47,6 +50,27 @@ cd /Users/intuitivecreations2705gmail.com/Downloads/REAL-ED-INVENTORY-main/inven
 ```
 
 Open: `http://127.0.0.1:5050`
+
+## Windows MVP (Option 2: packaged EXE, no separate Python install on test PC)
+
+Goal UX: desktop icon/shortcut → double-click → Admin opens.
+
+### Build the EXE once (on a Windows build machine)
+1. Open Command Prompt in `inventory_app/ui`
+2. Run `build_windows_exe.bat`
+3. Resulting file: `inventory_app/ui/dist/REAL-ED-Admin.exe`
+
+### Place EXE for runtime
+- Copy `REAL-ED-Admin.exe` to the **project root** (same folder as `sql_inventory_master.db`), or keep it in a folder that also contains `sql_inventory_master.db`.
+
+### Create desktop icon
+- Right-click `REAL-ED-Admin.exe` → **Send to → Desktop (create shortcut)**
+- Double-click shortcut to launch Admin.
+
+### Notes
+- Launcher auto-opens `http://127.0.0.1:5050`.
+- If server is already running, launcher only opens the Admin screen.
+- In launcher mode, backup-on-change is disabled by default for cross-platform MVP consistency.
 
 ## API quick check
 - `GET /api/health`
