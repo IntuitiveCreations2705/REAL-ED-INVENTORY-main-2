@@ -1,0 +1,1879 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import sqlite3
+import uuid
+from datetime import datetime, timezone
+from typing import Any
+
+from flask import Flask, jsonify, render_template, request, send_file
+
+from audit import write_audit
+from backup_ops import run_prechange_snapshot, run_startup_daily_snapshot
+from db import DB_PATH, get_conn
+from rules import (
+    as_number as _as_number,
+    computed_order_stock_qty as _computed_order_stock_qty,
+    normalize_box_label,
+    normalize_location_label,
+    normalize_pipe_tags,
+    parse_pipe_tags,
+    validate_event_tags_against_catalog,
+)
+from system_map_assets import SOURCE_FILE, ensure_system_map_assets
+
+EDITABLE_FIELDS = {
+    "item_id",
+    "item_name",
+    "box_number",
+    "storage_location",
+    "event_tags",
+    "description",
+    "crew_notes",
+    "qty_required",
+    "stock_on_hand",
+    "qty_flag_limit",
+    "count_confirmed",
+    "order_stock_qty",
+    "restock_comments",
+    "is_active",
+}
+
+UI_RULE_KEY_ACRONYM_ALLOWLIST = "acronym_allowlist"
+UI_RULE_KEY_TEAM_ADMIN_NOTES = "team_admin_notes"
+DEFAULT_ACRONYM_ALLOWLIST = ["usb", "xlr", "iec", "rca", "aa", "aaa"]
+DEFAULT_EVENT_THEME_ACCENT = "#4F8CFF"
+ROUGH_EVENT_THEME_COLORS = {
+    "Real Tantra": "#FB0404",
+    "Real Coach Program": "#00468C",
+    "Real Man 1": "#12C4AD",
+    "Real Woman 1": "#12C4AD",
+    "Real Spiritual Quest": "#B491F6",
+    "Real Relationships": "#FB0404",
+}
+EVENT_TAG_TOKEN_RE = re.compile(r"^[A-Z0-9_-]+$")
+CANONICAL_BOX_KEY_SQL = (
+    "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE({expr}, '')), ' ', ''), '-', ''), '_', ''), '.', ''))"
+)
+
+
+def api_error(
+    message: str,
+    status: int = 400,
+    *,
+    code: str | None = None,
+    **extras: Any,
+) -> tuple[Any, int]:
+    """Return a consistent JSON error envelope."""
+    body: dict[str, Any] = {"error": message}
+    if code:
+        body["code"] = code
+    body.update(extras)
+    return jsonify(body), status
+
+
+def _changed_by() -> str:
+    """Returns active username once Phase 2 auth is wired; falls back to remote IP."""
+    # TODO Phase 2: return session.get("username", request.remote_addr or "system")
+    return request.remote_addr or "system"
+
+
+def _ensure_qty_flag_limit_column(conn: sqlite3.Connection) -> None:
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(master_inventory)").fetchall()}
+    if "qty_flag_limit" not in cols:
+        conn.execute("ALTER TABLE master_inventory ADD COLUMN qty_flag_limit REAL")
+
+
+def _ensure_item_id_list_lifecycle_columns(conn: sqlite3.Connection) -> None:
+    table_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='item_id_list'"
+    ).fetchone()
+    if not table_exists:
+        return
+
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(item_id_list)").fetchall()}
+
+    if "version" not in cols:
+        conn.execute("ALTER TABLE item_id_list ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+    if "created_at" not in cols:
+        conn.execute(
+            "ALTER TABLE item_id_list ADD COLUMN created_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00Z'"
+        )
+    if "updated_at" not in cols:
+        conn.execute(
+            "ALTER TABLE item_id_list ADD COLUMN updated_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00Z'"
+        )
+    if "updated_by" not in cols:
+        conn.execute(
+            "ALTER TABLE item_id_list ADD COLUMN updated_by TEXT NOT NULL DEFAULT 'system'"
+        )
+
+
+def _ensure_event_name_theme_column(conn: sqlite3.Connection) -> None:
+    table_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_name'"
+    ).fetchone()
+    if not table_exists:
+        return
+
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(event_name)").fetchall()}
+    column_added = False
+
+    if "theme_accent_hex" not in cols:
+        conn.execute(
+            f"ALTER TABLE event_name ADD COLUMN theme_accent_hex TEXT NOT NULL DEFAULT '{DEFAULT_EVENT_THEME_ACCENT}'"
+        )
+        column_added = True
+
+    if not column_added:
+        return
+
+    for event_name, accent_hex in ROUGH_EVENT_THEME_COLORS.items():
+        conn.execute(
+            "UPDATE event_name SET theme_accent_hex = ? WHERE event_name = ?",
+            (accent_hex, event_name),
+        )
+
+
+def _is_blank_text(value: Any) -> bool:
+    return str(value or "").strip() == ""
+
+
+def _to_float(value: Any, field_name: str) -> tuple[float | None, tuple[Any, int] | None]:
+    if value in (None, ""):
+        return None, None
+    try:
+        return float(value), None
+    except (TypeError, ValueError):
+        return None, api_error(
+            f"{field_name} must be numeric.",
+            422,
+            code="invalid_number",
+            field=field_name,
+        )
+
+
+def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
+def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    return {r[1] for r in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+
+
+def _effective_item_status_from_box(
+    conn: sqlite3.Connection,
+    item_id: str,
+    fallback_status: str = "Active",
+) -> str:
+    """Global rule: Item status is governed by linked box status only.
+
+    Resolution:
+    - If no `box_id_list` table exists, fallback to stored status.
+    - If item has no master links, fallback to stored status.
+    - If any linked box is Active -> Active.
+    - If linked boxes exist and none are Active -> Inactive.
+    """
+    if not item_id:
+        return fallback_status
+    if not _table_exists(conn, "box_id_list"):
+        return fallback_status
+
+    box_expr = CANONICAL_BOX_KEY_SQL.format(expr="m.box_number")
+    row = conn.execute(
+        f"""
+        SELECT
+          COUNT(*) AS linked_rows,
+          SUM(CASE WHEN COALESCE(b.status, 'Active') = 'Active' THEN 1 ELSE 0 END) AS active_box_links
+        FROM master_inventory m
+        LEFT JOIN box_id_list b
+          ON {box_expr} = b.box_key
+        WHERE m.item_id = ?
+        """,
+        (item_id,),
+    ).fetchone()
+
+    linked_rows = int(row["linked_rows"] or 0) if row else 0
+    active_box_links = int(row["active_box_links"] or 0) if row else 0
+
+    if linked_rows == 0:
+        return fallback_status
+    return "Active" if active_box_links > 0 else "Inactive"
+
+
+def _validate_master_required_row_fields(row_values: dict[str, Any]) -> tuple[Any, int] | None:
+    required_text = [
+        ("item_id", "Item ID"),
+        ("item_name", "Item Name"),
+        ("box_number", "Box"),
+        ("storage_location", "Location"),
+        ("event_tags", "Event Tags"),
+        ("description", "Description"),
+    ]
+
+    missing_fields: list[str] = []
+    for field, _label in required_text:
+        if _is_blank_text(row_values.get(field)):
+            missing_fields.append(field)
+
+    for numeric_field in ("qty_required", "stock_on_hand"):
+        value = row_values.get(numeric_field)
+        if value in (None, ""):
+            missing_fields.append(numeric_field)
+            continue
+        try:
+            float(value)
+        except (TypeError, ValueError):
+            return api_error(
+                f"{numeric_field} must be numeric.",
+                422,
+                code="invalid_number",
+                field=numeric_field,
+            )
+
+    if missing_fields:
+        return api_error(
+            "Complete row before save.",
+            422,
+            code="required_fields_missing",
+            missing_fields=missing_fields,
+        )
+
+    return None
+
+
+def _normalize_allowlist_tokens(raw_tokens: Any) -> list[str]:
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for token in raw_tokens or []:
+        s = str(token or "").strip().lower()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        normalized.append(s)
+    return normalized
+
+
+def _ensure_ui_rule_settings_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ui_rule_settings (
+            rule_key   TEXT PRIMARY KEY,
+            value_text TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            updated_by TEXT,
+            version    INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+
+    existing = conn.execute(
+        "SELECT rule_key FROM ui_rule_settings WHERE rule_key = ?",
+        (UI_RULE_KEY_ACRONYM_ALLOWLIST,),
+    ).fetchone()
+    if existing is None:
+        conn.execute(
+            """
+            INSERT INTO ui_rule_settings (rule_key, value_text, updated_by, version)
+            VALUES (?, ?, 'system', 1)
+            """,
+            (UI_RULE_KEY_ACRONYM_ALLOWLIST, json.dumps(DEFAULT_ACRONYM_ALLOWLIST)),
+        )
+
+    existing_team_notes = conn.execute(
+        "SELECT rule_key FROM ui_rule_settings WHERE rule_key = ?",
+        (UI_RULE_KEY_TEAM_ADMIN_NOTES,),
+    ).fetchone()
+    if existing_team_notes is None:
+        conn.execute(
+            """
+            INSERT INTO ui_rule_settings (rule_key, value_text, updated_by, version)
+            VALUES (?, '', 'system', 1)
+            """,
+            (UI_RULE_KEY_TEAM_ADMIN_NOTES,),
+        )
+
+
+def _get_acronym_allowlist_row(conn: sqlite3.Connection) -> sqlite3.Row:
+    _ensure_ui_rule_settings_table(conn)
+    row = conn.execute(
+        """
+        SELECT rule_key, value_text, updated_at, updated_by, version
+        FROM ui_rule_settings
+        WHERE rule_key = ?
+        """,
+        (UI_RULE_KEY_ACRONYM_ALLOWLIST,),
+    ).fetchone()
+    assert row is not None
+    return row
+
+
+def _get_acronym_allowlist_tokens(conn: sqlite3.Connection) -> list[str]:
+    row = _get_acronym_allowlist_row(conn)
+    try:
+        parsed = json.loads(row["value_text"])
+    except Exception:
+        parsed = DEFAULT_ACRONYM_ALLOWLIST
+    tokens = _normalize_allowlist_tokens(parsed)
+    return tokens or DEFAULT_ACRONYM_ALLOWLIST[:]
+
+
+def _set_acronym_allowlist_tokens(
+    conn: sqlite3.Connection,
+    tokens: list[str],
+    changed_by: str,
+) -> sqlite3.Row:
+    _ensure_ui_rule_settings_table(conn)
+    conn.execute(
+        """
+        UPDATE ui_rule_settings
+        SET value_text = ?,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+            updated_by = ?,
+            version = version + 1
+        WHERE rule_key = ?
+        """,
+        (json.dumps(tokens), changed_by, UI_RULE_KEY_ACRONYM_ALLOWLIST),
+    )
+    return _get_acronym_allowlist_row(conn)
+
+
+def _get_team_admin_notes_row(conn: sqlite3.Connection) -> sqlite3.Row:
+    _ensure_ui_rule_settings_table(conn)
+    row = conn.execute(
+        """
+        SELECT rule_key, value_text, updated_at, updated_by, version
+        FROM ui_rule_settings
+        WHERE rule_key = ?
+        """,
+        (UI_RULE_KEY_TEAM_ADMIN_NOTES,),
+    ).fetchone()
+    assert row is not None
+    return row
+
+
+def _set_team_admin_notes(
+    conn: sqlite3.Connection,
+    notes: str,
+    changed_by: str,
+) -> sqlite3.Row:
+    _ensure_ui_rule_settings_table(conn)
+    conn.execute(
+        """
+        UPDATE ui_rule_settings
+        SET value_text = ?,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+            updated_by = ?,
+            version = version + 1
+        WHERE rule_key = ?
+        """,
+        (notes, changed_by, UI_RULE_KEY_TEAM_ADMIN_NOTES),
+    )
+    return _get_team_admin_notes_row(conn)
+
+
+def _validate_normalized_event_tags_for_event_definition(
+    normalized_tags: str,
+) -> tuple[bool, str | None, list[str]]:
+    tokens = parse_pipe_tags(normalized_tags)
+    if not tokens:
+        return False, "Event tags are required.", []
+
+    invalid_tokens: list[str] = []
+    for token in tokens:
+        tag = token.strip("|")
+        if not EVENT_TAG_TOKEN_RE.fullmatch(tag):
+            invalid_tokens.append(tag)
+
+    if invalid_tokens:
+        msg = (
+            "Invalid tag token(s): "
+            + ", ".join(invalid_tokens)
+            + ". Use uppercase letters, numbers, underscore, or hyphen only."
+        )
+        return False, msg, invalid_tokens
+
+    return True, None, []
+
+
+def create_app() -> Flask:
+    app = Flask(__name__, static_folder="static", template_folder="templates")
+
+    startup_backup = run_startup_daily_snapshot(changed_by="system")
+    if startup_backup.get("status") == "ok":
+        app.logger.info("Startup daily backup completed.")
+    elif startup_backup.get("status") == "error":
+        app.logger.warning("Startup daily backup failed: %s", startup_backup)
+
+    with get_conn() as cleanup_conn:
+        _ensure_qty_flag_limit_column(cleanup_conn)
+        _ensure_item_id_list_lifecycle_columns(cleanup_conn)
+        _ensure_event_name_theme_column(cleanup_conn)
+        _ensure_ui_rule_settings_table(cleanup_conn)
+
+    # Ensure generated visual map assets exist for UX/backend introspection.
+    system_map_boot_error: str | None = None
+    try:
+        ensure_system_map_assets()
+    except Exception as exc:  # pragma: no cover - startup should not crash UI
+        system_map_boot_error = str(exc)
+
+    @app.get("/")
+    def index() -> str:
+        return render_template("admin_master_view.html")
+
+    @app.get("/item-list")
+    def item_list_page() -> str:
+        return render_template("admin_item_list_view.html")
+
+    @app.get("/system-map")
+    def system_map_page() -> str:
+        return render_template("system_map_view.html")
+
+    @app.get("/event-stock-count")
+    def event_stock_count_page() -> str:
+        return render_template("event_stock_count.html")
+
+    @app.get("/api/health")
+    def health() -> Any:
+        with get_conn() as conn:
+            counts = conn.execute(
+                """
+                SELECT
+                  (SELECT COUNT(*) FROM event_name)       AS event_count,
+                  (SELECT COUNT(*) FROM item_id_list)     AS item_count,
+                  (SELECT COUNT(*) FROM master_inventory) AS master_count,
+                  (SELECT COUNT(*) FROM audit_log)        AS audit_count,
+                  (SELECT COUNT(*) FROM users)            AS user_count
+                """
+            ).fetchone()
+            fk_rows = conn.execute("PRAGMA foreign_key_check").fetchall()
+
+            # Enrich violation rows with item_id / item_name where possible
+            violation_details: list[dict] = []
+            for r in fk_rows[:30]:
+                detail: dict[str, Any] = {
+                    "table": r["table"],
+                    "rowid": r["rowid"],
+                    "parent": r["parent"],
+                }
+                if r["table"] == "master_inventory":
+                    extra = conn.execute(
+                        "SELECT item_id, item_name FROM master_inventory WHERE row_id = ?",
+                        (r["rowid"],),
+                    ).fetchone()
+                    if extra:
+                        detail["item_id"] = extra["item_id"]
+                        detail["item_name"] = extra["item_name"]
+                violation_details.append(detail)
+
+        return jsonify(
+            {
+                "db_path": str(DB_PATH),
+                "counts": dict(counts),
+                "foreign_key_violations": len(fk_rows),
+                "fk_violation_rows": violation_details,
+            }
+        )
+
+    @app.get("/api/system-map")
+    def system_map_info() -> Any:
+        nonlocal system_map_boot_error
+        try:
+            manifest = ensure_system_map_assets()
+            return jsonify(
+                {
+                    "status": "ok",
+                    **manifest,
+                    "live_url": "/system-map/live",
+                    "image_url": "/static/system_map_latest.png",
+                    "source_url": "/system-map/source",
+                }
+            )
+        except Exception as exc:
+            if system_map_boot_error is None:
+                system_map_boot_error = str(exc)
+            return jsonify(
+                {
+                    "status": "degraded",
+                    "error": system_map_boot_error,
+                    "live_url": "/system-map/live",
+                    "image_url": "/static/system_map_latest.png",
+                    "source_url": "/system-map/source",
+                }
+            )
+
+    @app.get("/system-map/live")
+    def system_map_live() -> Any:
+        return send_file(SOURCE_FILE.with_suffix(".html"), mimetype="text/html")
+
+    @app.get("/system-map/source")
+    def system_map_source() -> Any:
+        return send_file(SOURCE_FILE, mimetype="text/markdown")
+
+    @app.get("/api/suggest")
+    def suggest() -> Any:
+        term = request.args.get("q", "").strip()
+        if not term:
+            return jsonify([])
+
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT item_id, item_name, status
+                FROM item_id_list
+                WHERE item_name LIKE '%' || ? || '%'
+                ORDER BY item_name ASC
+                LIMIT 20
+                """,
+                (term,),
+            ).fetchall()
+            hydrated: list[dict[str, Any]] = []
+            for row in rows:
+                data = dict(row)
+                data["status"] = _effective_item_status_from_box(
+                    conn,
+                    str(data.get("item_id") or ""),
+                    str(data.get("status") or "Active"),
+                )
+                hydrated.append(data)
+        return jsonify(hydrated)
+
+    @app.get("/api/master")
+    def list_master() -> Any:
+        view = request.args.get("view", "all").strip().lower()
+        box = request.args.get("box", "").strip().lower()
+        event_name = request.args.get("event", "").strip()
+        event_is_specific = bool(event_name)
+
+        where = []
+        params: list[Any] = []
+
+        if view == "active":
+            where.append("m.is_active = 1")
+        elif view == "inactive":
+            where.append("m.is_active = 0")
+
+        if box:
+            where.append("LOWER(COALESCE(m.box_number, '')) LIKE '%' || ? || '%'")
+            params.append(box)
+
+        # Business rule: when a specific event is selected, default circulation
+        # excludes inactive rows unless user explicitly requests inactive view.
+        if event_is_specific and view == "all":
+            where.append("m.is_active = 1")
+
+        if event_name:
+            with get_conn() as conn:
+                event_row = conn.execute(
+                    "SELECT tags FROM event_name WHERE event_name = ?",
+                    (event_name,),
+                ).fetchone()
+
+            if event_row is None:
+                return jsonify([])
+
+            event_tags = parse_pipe_tags(event_row["tags"])
+            if event_tags:
+                tag_where = []
+                for tag in event_tags:
+                    tag_where.append("COALESCE(m.event_tags, '') LIKE ?")
+                    params.append(f"%{tag}%")
+                where.append(f"({' OR '.join(tag_where)})")
+
+        where_clause = f"WHERE {' AND '.join(where)}" if where else ""
+
+        with get_conn() as conn:
+            has_box_registry = _table_exists(conn, "box_id_list")
+            if has_box_registry:
+                box_cols = _table_columns(conn, "box_id_list")
+                box_expr = CANONICAL_BOX_KEY_SQL.format(expr="m.box_number")
+                box_type_select = (
+                    "COALESCE(b.box_type, '') AS box_type,"
+                    if "box_type" in box_cols
+                    else "'' AS box_type,"
+                )
+                sql = f"""
+                    SELECT
+                        m.row_id,
+                        m.item_id,
+                        m.item_name,
+                        m.box_number,
+                        m.storage_location,
+                        m.event_tags,
+                        m.description,
+                        m.crew_notes,
+                        m.qty_required,
+                        m.stock_on_hand,
+                        m.qty_flag_limit,
+                        m.count_confirmed,
+                        m.order_stock_qty,
+                        m.restock_comments,
+                        m.is_active,
+                        m.version,
+                        m.updated_at,
+                        m.updated_by,
+                        COALESCE(b.box_label, '') AS box_label,
+                        {box_type_select}
+                        COALESCE(b.box_id, '') AS box_id
+                    FROM master_inventory m
+                    LEFT JOIN box_id_list b
+                      ON {box_expr} = b.box_key
+                    {where_clause}
+                    ORDER BY m.row_id ASC
+                """
+            else:
+                sql = f"""
+                    SELECT
+                        m.row_id,
+                        m.item_id,
+                        m.item_name,
+                        m.box_number,
+                        m.storage_location,
+                        m.event_tags,
+                        m.description,
+                        m.crew_notes,
+                        m.qty_required,
+                        m.stock_on_hand,
+                        m.qty_flag_limit,
+                        m.count_confirmed,
+                        m.order_stock_qty,
+                        m.restock_comments,
+                        m.is_active,
+                        m.version,
+                        m.updated_at,
+                        m.updated_by,
+                        '' AS box_label,
+                        '' AS box_type,
+                        '' AS box_id
+                    FROM master_inventory m
+                    {where_clause}
+                    ORDER BY m.row_id ASC
+                """
+
+            rows = conn.execute(sql, params).fetchall()
+
+        return jsonify([dict(r) for r in rows])
+
+    @app.get("/api/events")
+    def list_events() -> Any:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT event_name, tags, COALESCE(theme_accent_hex, ?) AS theme_accent_hex
+                FROM event_name
+                ORDER BY event_name ASC
+                """,
+                (DEFAULT_EVENT_THEME_ACCENT,),
+            ).fetchall()
+
+        return jsonify([dict(r) for r in rows])
+
+    @app.patch("/api/events/<path:event_name>/tags")
+    def update_event_tags(event_name: str) -> Any:
+        payload = request.get_json(silent=True) or {}
+        raw_tags = payload.get("tags")
+        normalized_tags = normalize_pipe_tags(raw_tags)
+
+        is_valid, error_msg, invalid_tokens = _validate_normalized_event_tags_for_event_definition(
+            normalized_tags
+        )
+        if not is_valid:
+            return api_error(
+                error_msg or "Invalid event tags.",
+                422,
+                code="event_tags_invalid",
+                field="tags",
+                invalid_tokens=invalid_tokens,
+            )
+
+        prechange = run_prechange_snapshot(
+            reason=f"api.events.update_tags:{event_name}",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; update blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
+        changed_by = _changed_by()
+        with get_conn() as conn:
+            existing = conn.execute(
+                "SELECT event_name, tags, COALESCE(theme_accent_hex, ?) AS theme_accent_hex FROM event_name WHERE event_name = ?",
+                (DEFAULT_EVENT_THEME_ACCENT, event_name),
+            ).fetchone()
+            if existing is None:
+                return api_error("Event not found.", 404, code="event_not_found")
+
+            conn.execute(
+                "UPDATE event_name SET tags = ? WHERE event_name = ?",
+                (normalized_tags, event_name),
+            )
+            updated = conn.execute(
+                "SELECT event_name, tags, COALESCE(theme_accent_hex, ?) AS theme_accent_hex FROM event_name WHERE event_name = ?",
+                (DEFAULT_EVENT_THEME_ACCENT, event_name),
+            ).fetchone()
+
+            write_audit(
+                conn,
+                table_name="event_name",
+                row_ref=f"event_name={event_name}",
+                action="UPDATE",
+                field_name="tags",
+                old_value=existing["tags"],
+                new_value=updated["tags"] if updated else normalized_tags,
+                changed_by=changed_by,
+                session_id=str(uuid.uuid4()),
+            )
+
+        return jsonify(dict(updated))
+
+    @app.get("/api/ui-rules/acronym-allowlist")
+    def get_acronym_allowlist() -> Any:
+        with get_conn() as conn:
+            row = _get_acronym_allowlist_row(conn)
+            tokens = _get_acronym_allowlist_tokens(conn)
+        return jsonify(
+            {
+                "tokens": tokens,
+                "updated_at": row["updated_at"],
+                "updated_by": row["updated_by"],
+                "version": row["version"],
+            }
+        )
+
+    @app.put("/api/ui-rules/acronym-allowlist")
+    def update_acronym_allowlist() -> Any:
+        payload = request.get_json(silent=True) or {}
+        tokens = _normalize_allowlist_tokens(payload.get("tokens") or [])
+        if not tokens:
+            return api_error("tokens must contain at least one value.", 400)
+
+        prechange = run_prechange_snapshot(
+            reason="api.ui_rules.update_acronym_allowlist",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; update blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
+        changed_by = _changed_by()
+        with get_conn() as conn:
+            old_tokens = _get_acronym_allowlist_tokens(conn)
+            row = _set_acronym_allowlist_tokens(conn, tokens, changed_by)
+            write_audit(
+                conn,
+                table_name="ui_rule_settings",
+                row_ref=f"rule_key={UI_RULE_KEY_ACRONYM_ALLOWLIST}",
+                action="UPDATE",
+                field_name="value_text",
+                old_value=json.dumps(old_tokens),
+                new_value=json.dumps(tokens),
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
+
+        return jsonify(
+            {
+                "tokens": tokens,
+                "updated_at": row["updated_at"],
+                "updated_by": row["updated_by"],
+                "version": row["version"],
+            }
+        )
+
+    @app.get("/api/ui-rules/team-admin-notes")
+    def get_team_admin_notes() -> Any:
+        with get_conn() as conn:
+            row = _get_team_admin_notes_row(conn)
+        return jsonify(
+            {
+                "notes": row["value_text"],
+                "updated_at": row["updated_at"],
+                "updated_by": row["updated_by"],
+                "version": row["version"],
+            }
+        )
+
+    @app.put("/api/ui-rules/team-admin-notes")
+    def update_team_admin_notes() -> Any:
+        payload = request.get_json(silent=True) or {}
+        notes = str(payload.get("notes", "") or "")
+
+        prechange = run_prechange_snapshot(
+            reason="api.ui_rules.update_team_admin_notes",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; update blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
+        changed_by = _changed_by()
+
+        with get_conn() as conn:
+            old_row = _get_team_admin_notes_row(conn)
+            row = _set_team_admin_notes(conn, notes, changed_by)
+            write_audit(
+                conn,
+                table_name="ui_rule_settings",
+                row_ref=f"rule_key={UI_RULE_KEY_TEAM_ADMIN_NOTES}",
+                action="UPDATE",
+                field_name="value_text",
+                old_value=old_row["value_text"],
+                new_value=notes,
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
+
+        return jsonify(
+            {
+                "notes": row["value_text"],
+                "updated_at": row["updated_at"],
+                "updated_by": row["updated_by"],
+                "version": row["version"],
+            }
+        )
+
+    @app.post("/api/ui-rules/acronym-allowlist/reset")
+    def reset_acronym_allowlist() -> Any:
+        prechange = run_prechange_snapshot(
+            reason="api.ui_rules.reset_acronym_allowlist",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; reset blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
+        changed_by = _changed_by()
+        with get_conn() as conn:
+            old_tokens = _get_acronym_allowlist_tokens(conn)
+            row = _set_acronym_allowlist_tokens(conn, DEFAULT_ACRONYM_ALLOWLIST[:], changed_by)
+            write_audit(
+                conn,
+                table_name="ui_rule_settings",
+                row_ref=f"rule_key={UI_RULE_KEY_ACRONYM_ALLOWLIST}",
+                action="RESET",
+                field_name="value_text",
+                old_value=json.dumps(old_tokens),
+                new_value=json.dumps(DEFAULT_ACRONYM_ALLOWLIST),
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
+
+        return jsonify(
+            {
+                "tokens": DEFAULT_ACRONYM_ALLOWLIST,
+                "updated_at": row["updated_at"],
+                "updated_by": row["updated_by"],
+                "version": row["version"],
+            }
+        )
+
+    @app.post("/api/master")
+    def insert_master_row() -> Any:
+        payload = request.get_json(silent=True) or {}
+        fields = {k: v for k, v in payload.items() if k in EDITABLE_FIELDS}
+        manual_order_override = bool(payload.get("order_stock_qty_manual_override"))
+
+        raw_event_tags = fields.pop("event_tags", "")
+        event_tags = normalize_pipe_tags(raw_event_tags)
+        description = str(fields.pop("description", "") or "")
+
+        qty_required_raw = fields.pop("qty_required", None)
+        qty_required, qty_required_error = _to_float(qty_required_raw, "qty_required")
+        if qty_required_error:
+            return qty_required_error
+
+        stock_on_hand_raw = fields.pop("stock_on_hand", None)
+        stock_on_hand, stock_on_hand_error = _to_float(stock_on_hand_raw, "stock_on_hand")
+        if stock_on_hand_error:
+            return stock_on_hand_error
+
+        qty_flag_limit_raw = fields.pop("qty_flag_limit", None)
+        qty_flag_limit, qty_flag_limit_error = _to_float(qty_flag_limit_raw, "qty_flag_limit")
+        if qty_flag_limit_error:
+            return qty_flag_limit_error
+
+        order_stock_qty = fields.pop("order_stock_qty", None)
+        is_active = int(fields.pop("is_active", 1))
+        item_id = (fields.pop("item_id", None) or "").strip() or None
+        item_name: str | None = None
+
+        normalized_box = normalize_box_label(fields.get("box_number"))
+        normalized_location = normalize_location_label(fields.get("storage_location"))
+
+        required_error = _validate_master_required_row_fields(
+            {
+                "item_id": item_id,
+                "item_name": item_id,
+                "box_number": normalized_box,
+                "storage_location": normalized_location,
+                "event_tags": event_tags,
+                "description": description,
+                "qty_required": qty_required,
+                "stock_on_hand": stock_on_hand,
+            }
+        )
+        if required_error:
+            return required_error
+
+        final_order_stock_qty = (
+            _as_number(order_stock_qty)
+            if manual_order_override and order_stock_qty not in (None, "")
+            else _computed_order_stock_qty(qty_required, stock_on_hand)
+        )
+
+        # ── Validate event_tags against Active catalog ──────────────────────
+        with get_conn() as tag_conn:
+            is_valid, error_msg = validate_event_tags_against_catalog(event_tags, tag_conn)
+            if not is_valid:
+                return api_error(error_msg or "Invalid tags.", 422, code="tag_validation_error")
+
+        prechange = run_prechange_snapshot(
+            reason="api.master.insert",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; insert blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
+        changed_by = _changed_by()
+        session_id = str(uuid.uuid4())
+
+        try:
+            with get_conn() as conn:
+                if item_id:
+                    ref = conn.execute(
+                        "SELECT item_name FROM item_id_list WHERE item_id = ?",
+                        (item_id,),
+                    ).fetchone()
+                    if ref is None:
+                        return api_error(
+                            "item_id not found in item_id_list.",
+                            409,
+                            code="item_id_missing",
+                        )
+                    item_name = ref["item_name"]
+
+                cur = conn.execute(
+                    """
+                    INSERT INTO master_inventory
+                        (item_id, item_name, box_number, storage_location,
+                         event_tags, description, crew_notes,
+                         qty_required, stock_on_hand, qty_flag_limit, order_stock_qty,
+                         restock_comments, is_active,
+                         updated_at, updated_by, version)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,
+                            strftime('%Y-%m-%dT%H:%M:%SZ','now'),?,1)
+                    """,
+                    (
+                        item_id,
+                        item_name,
+                        normalized_box,
+                        normalized_location,
+                        event_tags,
+                        description,
+                        fields.get("crew_notes"),
+                        qty_required,
+                        stock_on_hand,
+                        qty_flag_limit,
+                        final_order_stock_qty,
+                        fields.get("restock_comments"),
+                        is_active,
+                        changed_by,
+                    ),
+                )
+                new_id = cur.lastrowid
+                inserted = conn.execute(
+                    "SELECT * FROM master_inventory WHERE row_id = ?", (new_id,)
+                ).fetchone()
+                write_audit(
+                    conn,
+                    table_name="master_inventory",
+                    row_ref=f"row_id={new_id}",
+                    action="INSERT",
+                    old_value=None,
+                    new_value="new row",
+                    changed_by=changed_by,
+                    session_id=session_id,
+                    device_hint=request.remote_addr,
+                )
+        except sqlite3.IntegrityError as exc:
+            return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
+
+        return jsonify({"row": dict(inserted)}), 201
+
+    @app.patch("/api/master/<int:row_id>")
+    def update_master_row(row_id: int) -> Any:
+        payload = request.get_json(silent=True) or {}
+        client_version = payload.pop("version", None)
+        manual_order_override = bool(payload.get("order_stock_qty_manual_override"))
+        updates = {k: v for k, v in payload.items() if k in EDITABLE_FIELDS}
+        if not updates:
+            return api_error("No editable fields provided.")
+
+        if "item_name" in updates and "item_id" not in updates:
+            return api_error(
+                "item_name is governed by item_id. Save with item_id; item_name will auto-sync from item_id_list.",
+                409,
+                code="governed_field",
+                row_id=row_id,
+                field="item_name",
+            )
+
+        if "item_id" in updates:
+            raw_item_id = updates.get("item_id")
+            item_id = str(raw_item_id).strip() if raw_item_id is not None else ""
+            updates["item_id"] = item_id if item_id else None
+            if not item_id:
+                updates["item_name"] = None
+
+        if "event_tags" in updates:
+            raw_event_tags = updates.get("event_tags")
+            updates["event_tags"] = normalize_pipe_tags(raw_event_tags)
+
+        if "box_number" in updates:
+            updates["box_number"] = normalize_box_label(updates.get("box_number"))
+
+        if "storage_location" in updates:
+            updates["storage_location"] = normalize_location_label(updates.get("storage_location"))
+
+        if "qty_flag_limit" in updates:
+            raw_limit = updates.get("qty_flag_limit")
+            qty_flag_limit, qty_flag_limit_error = _to_float(raw_limit, "qty_flag_limit")
+            if qty_flag_limit_error:
+                return qty_flag_limit_error
+            updates["qty_flag_limit"] = qty_flag_limit
+
+        # ── Validate event_tags against Active catalog ──────────────────────
+        if "event_tags" in updates:
+            normalized_tags = updates["event_tags"]
+            with get_conn() as tag_conn:
+                is_valid, error_msg = validate_event_tags_against_catalog(
+                    normalized_tags, tag_conn
+                )
+                if not is_valid:
+                    return api_error(error_msg or "Invalid tags.", 422, code="tag_validation_error", row_id=row_id)
+
+        prechange = run_prechange_snapshot(
+            reason=f"api.master.update:{row_id}",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; update blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
+        changed_by = _changed_by()
+        session_id = str(uuid.uuid4())
+        assignments: list[str] = []
+        values: list[Any] = []
+        updated: Any = None
+        fk_rows: list[Any] = []
+
+        try:
+            with get_conn() as conn:
+                # ── Optimistic concurrency ──────────────────────────────────
+                if client_version is not None:
+                    current = conn.execute(
+                        "SELECT version FROM master_inventory WHERE row_id = ?",
+                        (row_id,),
+                    ).fetchone()
+                    if current is None:
+                        return api_error("Row not found.", 404)
+                    if int(current["version"]) != int(client_version):
+                        return api_error(
+                            "Stale data: this row was modified by another user. Refresh and retry.",
+                            409,
+                            code="stale_version",
+                            row_id=row_id,
+                        )
+
+                # ── Capture old values for audit ────────────────────────────
+                old_row = conn.execute(
+                    "SELECT * FROM master_inventory WHERE row_id = ?", (row_id,)
+                ).fetchone()
+                if old_row is None:
+                    return api_error("Row not found.", 404)
+
+                # ── Resolve item_id → item_name sync ───────────────────────
+                if "item_id" in updates and updates["item_id"] is not None:
+                    ref = conn.execute(
+                        "SELECT item_name FROM item_id_list WHERE item_id = ?",
+                        (updates["item_id"],),
+                    ).fetchone()
+                    if ref is None:
+                        return api_error(
+                            "Discrepancy: item_id not found in item_id_list.",
+                            409,
+                            code="item_id_missing",
+                            row_id=row_id,
+                            field="item_id",
+                        )
+                    updates["item_name"] = ref["item_name"]
+
+                if "qty_required" in updates:
+                    qty_required, qty_required_error = _to_float(updates.get("qty_required"), "qty_required")
+                    if qty_required_error:
+                        return qty_required_error
+                    updates["qty_required"] = qty_required
+
+                if "stock_on_hand" in updates:
+                    stock_on_hand, stock_on_hand_error = _to_float(updates.get("stock_on_hand"), "stock_on_hand")
+                    if stock_on_hand_error:
+                        return stock_on_hand_error
+                    updates["stock_on_hand"] = stock_on_hand
+
+                merged_row = {
+                    "item_id": updates.get("item_id", old_row["item_id"]),
+                    "item_name": updates.get("item_name", old_row["item_name"]),
+                    "box_number": updates.get("box_number", old_row["box_number"]),
+                    "storage_location": updates.get("storage_location", old_row["storage_location"]),
+                    "event_tags": updates.get("event_tags", old_row["event_tags"]),
+                    "description": updates.get("description", old_row["description"]),
+                    "qty_required": updates.get("qty_required", old_row["qty_required"]),
+                    "stock_on_hand": updates.get("stock_on_hand", old_row["stock_on_hand"]),
+                }
+                required_error = _validate_master_required_row_fields(merged_row)
+                if required_error:
+                    return required_error
+
+                next_qty_required = updates.get("qty_required", old_row["qty_required"])
+                next_stock_on_hand = updates.get("stock_on_hand", old_row["stock_on_hand"])
+                incoming_order_stock_qty = updates.get("order_stock_qty", old_row["order_stock_qty"])
+                updates["order_stock_qty"] = (
+                    _as_number(incoming_order_stock_qty)
+                    if manual_order_override and incoming_order_stock_qty not in (None, "")
+                    else _computed_order_stock_qty(next_qty_required, next_stock_on_hand)
+                )
+
+                # ── Build SET clause ────────────────────────────────────────
+                for field, value in updates.items():
+                    assignments.append(f"{field} = ?")
+                    if field in {"qty_required", "stock_on_hand", "order_stock_qty", "qty_flag_limit"} and value is not None:
+                        values.append(float(value))
+                    elif field == "is_active" and value is not None:
+                        values.append(1 if int(value) else 0)
+                    else:
+                        values.append(value)
+
+                # Lifecycle fields stamped on every save
+                assignments += [
+                    "updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')",
+                    "updated_by = ?",
+                    "version = version + 1",
+                ]
+                values += [changed_by, row_id]
+
+                cur = conn.execute(
+                    f"UPDATE master_inventory SET {', '.join(assignments)} WHERE row_id = ?",
+                    values,
+                )
+                if cur.rowcount == 0:
+                    return api_error("Row not found.", 404)
+                updated = conn.execute(
+                    "SELECT * FROM master_inventory WHERE row_id = ?", (row_id,)
+                ).fetchone()
+                fk_rows = conn.execute("PRAGMA foreign_key_check").fetchall()
+                if fk_rows:
+                    return api_error(
+                        "Discrepancy detected by FK check. Save blocked until rectified.",
+                        409,
+                        code="fk_violation",
+                        row_id=row_id,
+                    )
+
+                # ── Audit (within same transaction) ─────────────────────────
+                for field, new_val in updates.items():
+                    old_val = old_row[field] if field in old_row.keys() else None
+                    write_audit(
+                        conn,
+                        table_name="master_inventory",
+                        row_ref=f"row_id={row_id}",
+                        action="UPDATE",
+                        field_name=field,
+                        old_value=old_val,
+                        new_value=new_val,
+                        changed_by=changed_by,
+                        session_id=session_id,
+                        device_hint=request.remote_addr,
+                    )
+
+        except sqlite3.IntegrityError as exc:
+            return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
+
+        return jsonify({"row": dict(updated), "foreign_key_violations": len(fk_rows)})
+
+    @app.post("/api/master/<int:row_id>/toggle-active")
+    def toggle_active(row_id: int) -> Any:
+        prechange = run_prechange_snapshot(
+            reason=f"api.master.toggle_active:{row_id}",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; toggle blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
+        changed_by = _changed_by()
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT is_active FROM master_inventory WHERE row_id = ?", (row_id,)
+            ).fetchone()
+            if row is None:
+                return api_error("Row not found.", 404)
+
+            old_value = row["is_active"]
+            new_value = 0 if old_value == 1 else 1
+            conn.execute(
+                """
+                UPDATE master_inventory
+                SET is_active = ?,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+                    updated_by = ?,
+                    version    = version + 1
+                WHERE row_id = ?
+                """,
+                (new_value, changed_by, row_id),
+            )
+            updated = conn.execute(
+                "SELECT row_id, is_active, version, updated_at, updated_by"
+                " FROM master_inventory WHERE row_id = ?",
+                (row_id,),
+            ).fetchone()
+            write_audit(
+                conn,
+                table_name="master_inventory",
+                row_ref=f"row_id={row_id}",
+                action="TOGGLE",
+                field_name="is_active",
+                old_value=old_value,
+                new_value=new_value,
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
+
+        return jsonify(dict(updated))
+
+    @app.post("/api/master/<int:row_id>/link-item")
+    def link_item(row_id: int) -> Any:
+        payload = request.get_json(silent=True) or {}
+        item_id = payload.get("item_id")
+        item_name = payload.get("item_name")
+
+        if not item_id or not item_name:
+            return api_error("item_id and item_name are required.")
+
+        prechange = run_prechange_snapshot(
+            reason=f"api.master.link_item:{row_id}",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; link blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
+        changed_by = _changed_by()
+        with get_conn() as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM item_id_list WHERE item_id = ? AND item_name = ?",
+                (item_id, item_name),
+            ).fetchone()
+            if exists is None:
+                return api_error(
+                    "Selected item pair does not exist in item_id_list.",
+                    409,
+                    code="item_pair_missing",
+                )
+
+            old_row = conn.execute(
+                "SELECT item_id FROM master_inventory WHERE row_id = ?", (row_id,)
+            ).fetchone()
+
+            try:
+                cur = conn.execute(
+                    """
+                    UPDATE master_inventory
+                    SET item_id = ?, item_name = ?,
+                        updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+                        updated_by = ?,
+                        version    = version + 1
+                    WHERE row_id = ?
+                    """,
+                    (item_id, item_name, changed_by, row_id),
+                )
+            except sqlite3.IntegrityError as exc:
+                return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
+
+            if cur.rowcount == 0:
+                return api_error("Row not found.", 404)
+
+            row = conn.execute(
+                "SELECT row_id, item_id, item_name, version FROM master_inventory WHERE row_id = ?",
+                (row_id,),
+            ).fetchone()
+            write_audit(
+                conn,
+                table_name="master_inventory",
+                row_ref=f"row_id={row_id}",
+                action="LINK",
+                field_name="item_id",
+                old_value=old_row["item_id"] if old_row else None,
+                new_value=item_id,
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
+
+        return jsonify(dict(row))
+
+    @app.get("/api/item-list")
+    def list_item_id_list() -> Any:
+        status = request.args.get("status", "all").strip().lower()
+        q = request.args.get("q", "").strip().lower()
+
+        where = []
+        params: list[Any] = []
+
+        if q:
+            where.append("(LOWER(i.item_id) LIKE '%' || ? || '%' OR LOWER(i.item_name) LIKE '%' || ? || '%')")
+            params.extend([q, q])
+
+        where_clause = f"WHERE {' AND '.join(where)}" if where else ""
+
+        sql = f"""
+            SELECT
+              i.item_id,
+              i.status,
+              i.item_name,
+              i.version,
+              i.updated_at,
+              i.updated_by,
+              (
+                SELECT COUNT(*)
+                FROM master_inventory m
+                WHERE m.item_id = i.item_id
+              ) AS used_count
+            FROM item_id_list i
+            {where_clause}
+            ORDER BY i.item_id ASC
+        """
+
+        with get_conn() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            hydrated: list[dict[str, Any]] = []
+            for row in rows:
+                data = dict(row)
+                effective_status = _effective_item_status_from_box(
+                    conn,
+                    str(data.get("item_id") or ""),
+                    str(data.get("status") or "Active"),
+                )
+                data["status"] = effective_status
+                data["status_source"] = "box_status_rule"
+                hydrated.append(data)
+
+            if status == "active":
+                hydrated = [r for r in hydrated if r.get("status") == "Active"]
+            elif status == "inactive":
+                hydrated = [r for r in hydrated if r.get("status") == "Inactive"]
+
+        return jsonify(hydrated)
+
+    @app.post("/api/item-list/upsert")
+    def upsert_item_id_list() -> Any:
+        payload = request.get_json(silent=True) or {}
+        original_item_id = (payload.get("original_item_id") or "").strip() or None
+        item_id = (payload.get("item_id") or "").strip()
+        item_name = (payload.get("item_name") or "").strip()
+        client_version = payload.get("version", None)
+
+        if not item_id:
+            return api_error("item_id is required.")
+        if not item_name:
+            return api_error("item_name is required.")
+
+        prechange = run_prechange_snapshot(
+            reason="api.item_list.upsert",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; upsert blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
+        changed_by = _changed_by()
+        try:
+            with get_conn() as conn:
+                if original_item_id:
+                    existing = conn.execute(
+                        """
+                        SELECT
+                          i.item_id,
+                          i.item_name,
+                          i.status,
+                          i.version,
+                          (
+                            SELECT COUNT(*)
+                            FROM master_inventory m
+                            WHERE m.item_id = i.item_id
+                          ) AS used_count
+                        FROM item_id_list i
+                        WHERE i.item_id = ?
+                        """,
+                        (original_item_id,),
+                    ).fetchone()
+                    if existing is None:
+                        return api_error("Original item_id not found.", 404)
+
+                    if item_id != existing["item_id"]:
+                        return api_error(
+                            "item_id is immutable for existing rows. Create a new item_id instead.",
+                            409,
+                            code="immutable_item_id",
+                        )
+
+                    if client_version is not None and int(existing["version"]) != int(client_version):
+                        return api_error(
+                            "Stale data: this item was modified by another user. Refresh and retry.",
+                            409,
+                            code="stale_version",
+                        )
+
+                    old_item_id = existing["item_id"]
+                    old_item_name = existing["item_name"]
+                    effective_status = _effective_item_status_from_box(
+                        conn,
+                        old_item_id,
+                        str(existing["status"] or "Active"),
+                    )
+                    used_count = int(existing["used_count"])
+                    changing_key_pair = (item_id != old_item_id) or (item_name != old_item_name)
+
+                    if used_count > 0 and changing_key_pair:
+                        temp_item_id = f"{old_item_id}__TMP__"
+                        n = 1
+                        while (
+                            conn.execute(
+                                "SELECT 1 FROM item_id_list WHERE item_id = ?",
+                                (temp_item_id,),
+                            ).fetchone()
+                            is not None
+                        ):
+                            n += 1
+                            temp_item_id = f"{old_item_id}__TMP__{n}"
+
+                        conn.execute(
+                            "INSERT INTO item_id_list (item_id, status, item_name) VALUES (?, ?, ?)",
+                            (temp_item_id, existing["status"], old_item_name),
+                        )
+                        conn.execute(
+                            "UPDATE master_inventory SET item_id = ?, item_name = ?"
+                            " WHERE item_id = ? AND item_name = ?",
+                            (temp_item_id, old_item_name, old_item_id, old_item_name),
+                        )
+                        conn.execute(
+                            """
+                            UPDATE item_id_list
+                            SET item_name = ?, status = ?,
+                                updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+                                updated_by = ?, version = version + 1
+                            WHERE item_id = ?
+                            """,
+                            (item_name, effective_status, changed_by, old_item_id),
+                        )
+                        conn.execute(
+                            "UPDATE master_inventory SET item_id = ?, item_name = ?"
+                            " WHERE item_id = ? AND item_name = ?",
+                            (old_item_id, item_name, temp_item_id, old_item_name),
+                        )
+                        conn.execute("DELETE FROM item_id_list WHERE item_id = ?", (temp_item_id,))
+                        saved_item_id = old_item_id
+                    else:
+                        conn.execute(
+                            """
+                            UPDATE item_id_list
+                            SET item_id = ?, status = ?, item_name = ?,
+                                updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+                                updated_by = ?, version = version + 1
+                            WHERE item_id = ?
+                            """,
+                            (item_id, effective_status, item_name, changed_by, original_item_id),
+                        )
+                        saved_item_id = item_id
+
+                    write_audit(
+                        conn,
+                        table_name="item_id_list",
+                        row_ref=f"item_id={saved_item_id}",
+                        action="UPDATE",
+                        field_name="item_name",
+                        old_value=old_item_name,
+                        new_value=item_name,
+                        changed_by=changed_by,
+                        device_hint=request.remote_addr,
+                    )
+                else:
+                    effective_status = _effective_item_status_from_box(conn, item_id, "Active")
+                    conn.execute(
+                        "INSERT INTO item_id_list (item_id, status, item_name) VALUES (?, ?, ?)",
+                        (item_id, effective_status, item_name),
+                    )
+                    saved_item_id = item_id
+                    write_audit(
+                        conn,
+                        table_name="item_id_list",
+                        row_ref=f"item_id={item_id}",
+                        action="INSERT",
+                        old_value=None,
+                        new_value=f"{item_id} | {item_name} | {effective_status}",
+                        changed_by=changed_by,
+                        device_hint=request.remote_addr,
+                    )
+
+                row = conn.execute(
+                    """
+                    SELECT
+                      i.item_id,
+                      i.status,
+                      i.item_name,
+                      i.version,
+                      i.updated_at,
+                      i.updated_by,
+                      (
+                        SELECT COUNT(*)
+                        FROM master_inventory m
+                        WHERE m.item_id = i.item_id
+                      ) AS used_count
+                    FROM item_id_list i
+                    WHERE i.item_id = ?
+                    """,
+                    (saved_item_id,),
+                ).fetchone()
+                row_data = dict(row)
+                row_data["status"] = _effective_item_status_from_box(
+                    conn,
+                    row_data["item_id"],
+                    str(row_data.get("status") or "Active"),
+                )
+                row_data["status_source"] = "box_status_rule"
+        except sqlite3.IntegrityError as exc:
+            return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
+
+        return jsonify({"row": row_data})
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Event Tag Catalog API (governance, lifecycle, role-based access)
+    # ────────────────────────────────────────────────────────────────────────
+
+    @app.get("/api/event-tags")
+    def list_event_tags() -> Any:
+        """Fetch all tags in catalog, ordered by sort_order."""
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT tag_name, status, description, sort_order, owner, version,
+                       created_at, created_by, updated_at, updated_by
+                FROM event_tag_catalog
+                ORDER BY sort_order ASC, tag_name ASC
+                """
+            ).fetchall()
+        return jsonify([dict(r) for r in rows])
+
+    @app.post("/api/event-tags")
+    def create_event_tag() -> Any:
+        """Create new tag in catalog. Senior admin only."""
+        payload = request.get_json(silent=True) or {}
+        tag_name = str(payload.get("tag_name", "")).strip()
+        description = str(payload.get("description", "")).strip() or None
+        sort_order = payload.get("sort_order")
+
+        if not tag_name:
+            return api_error("tag_name is required.", 400)
+
+        prechange = run_prechange_snapshot(
+            reason="api.event_tags.create",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; create blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
+        tag_name = tag_name.upper()
+        changed_by = _changed_by()
+        now = datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
+
+        try:
+            with get_conn() as conn:
+                # Check if tag already exists.
+                existing = conn.execute(
+                    "SELECT tag_name FROM event_tag_catalog WHERE tag_name = ?",
+                    (tag_name,),
+                ).fetchone()
+                if existing:
+                    return api_error(f"Tag '{tag_name}' already exists.", 409, code="tag_exists")
+
+                conn.execute(
+                    """
+                    INSERT INTO event_tag_catalog
+                      (tag_name, status, description, sort_order, owner,
+                       created_at, created_by, updated_at, updated_by, version)
+                    VALUES (?, 'Active', ?, ?, ?, ?, ?, ?, ?, 1)
+                    """,
+                    (tag_name, description, sort_order, changed_by, now, changed_by, now, changed_by),
+                )
+                write_audit(
+                    conn,
+                    table_name="event_tag_catalog",
+                    row_ref=f"tag_name={tag_name}",
+                    action="INSERT",
+                    old_value=None,
+                    new_value=f"{tag_name} | {description}",
+                    changed_by=changed_by,
+                    device_hint=request.remote_addr,
+                )
+
+                row = conn.execute(
+                    "SELECT * FROM event_tag_catalog WHERE tag_name = ?", (tag_name,)
+                ).fetchone()
+        except sqlite3.IntegrityError as exc:
+            return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
+
+        return jsonify({"row": dict(row)}), 201
+
+    @app.patch("/api/event-tags/<tag_name>")
+    def update_event_tag(tag_name: str) -> Any:
+        """Update tag status or description. Senior admin only."""
+        tag_name = tag_name.strip().upper()
+        payload = request.get_json(silent=True) or {}
+        updates: dict[str, Any] = {}
+
+        if "status" in payload:
+            status = str(payload["status"]).strip()
+            if status not in ("Active", "Inactive"):
+                return api_error("status must be 'Active' or 'Inactive'.", 400)
+            updates["status"] = status
+
+        if "description" in payload:
+            updates["description"] = str(payload.get("description", "")).strip() or None
+
+        if "sort_order" in payload:
+            updates["sort_order"] = payload.get("sort_order")
+
+        if not updates:
+            return api_error("No updatable fields provided.", 400)
+
+        prechange = run_prechange_snapshot(
+            reason=f"api.event_tags.update:{tag_name}",
+            changed_by=_changed_by(),
+        )
+        if prechange.get("status") == "error":
+            required = str(os.getenv("INVENTORY_PRECHANGE_BACKUP_REQUIRED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+            if required:
+                return api_error(
+                    "Pre-change backup failed; update blocked.",
+                    503,
+                    code="prechange_backup_failed",
+                    backup=prechange,
+                )
+
+        changed_by = _changed_by()
+        now = datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
+
+        try:
+            with get_conn() as conn:
+                # Fetch old row for audit.
+                old_row = conn.execute(
+                    "SELECT * FROM event_tag_catalog WHERE tag_name = ?", (tag_name,)
+                ).fetchone()
+                if old_row is None:
+                    return api_error(f"Tag '{tag_name}' not found.", 404)
+
+                # Build SET clause.
+                assignments = [f"updated_at = '{now}'",
+                               "updated_by = ?",
+                               "version = version + 1"]
+                values = [changed_by]
+
+                for field, value in updates.items():
+                    assignments.append(f"{field} = ?")
+                    values.append(value)
+
+                values.append(tag_name)
+
+                conn.execute(
+                    f"""
+                    UPDATE event_tag_catalog
+                    SET {', '.join(assignments)}
+                    WHERE tag_name = ?
+                    """,
+                    values,
+                )
+
+                # Audit each changed field.
+                for field, new_value in updates.items():
+                    old_value = old_row[field]
+                    if old_value != new_value:
+                        write_audit(
+                            conn,
+                            table_name="event_tag_catalog",
+                            row_ref=f"tag_name={tag_name}",
+                            action="UPDATE",
+                            field_name=field,
+                            old_value=str(old_value) if old_value is not None else None,
+                            new_value=str(new_value) if new_value is not None else None,
+                            changed_by=changed_by,
+                            device_hint=request.remote_addr,
+                        )
+
+                row = conn.execute(
+                    "SELECT * FROM event_tag_catalog WHERE tag_name = ?", (tag_name,)
+                ).fetchone()
+        except sqlite3.IntegrityError as exc:
+            return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
+
+        return jsonify({"row": dict(row)})
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Event Stock Count API
+    # ────────────────────────────────────────────────────────────────────────
+
+    @app.get("/api/event-stock-count")
+    def get_event_stock_count() -> Any:
+        """Fetch active inventory rows for stock count summary view.
+        Only returns is_active = 1 rows.
+        """
+        with get_conn() as conn:
+            has_box_registry = _table_exists(conn, "box_id_list")
+            if has_box_registry:
+                box_cols = _table_columns(conn, "box_id_list")
+                box_expr = CANONICAL_BOX_KEY_SQL.format(expr="m.box_number")
+                box_type_select = (
+                    "COALESCE(b.box_type, '') AS box_type,"
+                    if "box_type" in box_cols
+                    else "'' AS box_type,"
+                )
+                sql = f"""
+                    SELECT
+                      m.row_id,
+                      m.item_id,
+                      m.item_name,
+                      m.box_number,
+                      m.storage_location,
+                      m.event_tags,
+                      m.description,
+                      m.qty_required,
+                      m.stock_on_hand,
+                      m.qty_flag_limit,
+                      m.order_stock_qty,
+                      m.crew_notes,
+                      m.restock_comments,
+                      m.is_active,
+                      m.version,
+                      m.created_at,
+                      m.updated_at,
+                      COALESCE(b.box_label, '') AS box_label,
+                      {box_type_select}
+                      COALESCE(b.box_id, '') AS box_id
+                    FROM master_inventory m
+                    LEFT JOIN box_id_list b
+                      ON {box_expr} = b.box_key
+                    WHERE m.is_active = 1
+                    ORDER BY m.box_number ASC, m.storage_location ASC, m.description ASC
+                """
+            else:
+                sql = """
+                    SELECT
+                      m.row_id,
+                      m.item_id,
+                      m.item_name,
+                      m.box_number,
+                      m.storage_location,
+                      m.event_tags,
+                      m.description,
+                      m.qty_required,
+                      m.stock_on_hand,
+                      m.qty_flag_limit,
+                      m.order_stock_qty,
+                      m.crew_notes,
+                      m.restock_comments,
+                      m.is_active,
+                      m.version,
+                      m.created_at,
+                      m.updated_at,
+                      '' AS box_label,
+                      '' AS box_type,
+                      '' AS box_id
+                    FROM master_inventory m
+                    WHERE m.is_active = 1
+                    ORDER BY m.box_number ASC, m.storage_location ASC, m.description ASC
+                """
+
+            rows = conn.execute(sql).fetchall()
+        return jsonify([dict(r) for r in rows])
+
+    return app
+
+
+if __name__ == "__main__":
+    create_app().run(debug=True, port=5050)

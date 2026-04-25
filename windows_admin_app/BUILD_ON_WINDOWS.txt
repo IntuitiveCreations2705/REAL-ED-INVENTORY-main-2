@@ -1,0 +1,22 @@
+REAL-ED Windows Admin build / run
+
+Canonical packaged app folder:
+- windows_admin_app
+
+When you build on Windows, this folder is where the final packaged app lives.
+
+Expected files here after build:
+- REAL-ED-Admin.exe
+- sql_inventory_master.db
+- app_icon.ico
+- app_icon.png
+
+How to build on Windows:
+1. Open the repo root folder.
+2. Run build_windows_admin_exe.bat
+3. Open windows_admin_app
+4. Launch REAL-ED-Admin.exe
+
+Important:
+- Keep REAL-ED-Admin.exe and sql_inventory_master.db in the same folder.
+- If you replace the icon later, keep the canonical source at inventory_app\ui\static\app_icon.ico

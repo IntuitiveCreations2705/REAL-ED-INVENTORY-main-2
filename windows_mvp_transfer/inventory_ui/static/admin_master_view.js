@@ -1,0 +1,1580 @@
+import {
+  formatAllowlistForInput,
+  hasAllCapsWords,
+  loadCaseAllowlist,
+  normalizeDescriptionCase as sharedNormalizeDescriptionCase,
+  resetCaseAllowlist as sharedResetCaseAllowlist,
+  saveCaseAllowlist as sharedSaveCaseAllowlist,
+} from './global_case_rules.js';
+import {
+  applyEventTheme,
+  DEFAULT_EVENT_ACCENT,
+  summarizePipeTags,
+} from './event_theme.js';
+
+const state = {
+  rows: [],
+  filteredRows: [],
+  suggestions: [],
+  eventTagChoices: [],
+  catalogEventTagChoices: [],
+  knownBoxes: [],
+  knownLocations: [],
+  events: [],
+  boxFilterCommittedByKeyboard: false,
+  boxAccordionMode: false,
+};
+
+// Single dirty-row tracker — only one row may have unsaved edits at a time.
+const dirtyState = {
+  row: null,
+  tr: null,
+};
+
+const SESSION_EVENT_KEY = 'admin.master.event';
+const SESSION_VIEW_KEY = 'admin.master.view';
+
+const els = {
+  body: document.getElementById('rows-body'),
+  rowTemplate: document.getElementById('row-template'),
+  statusBar: document.getElementById('status-bar'),
+  refreshBtn: document.getElementById('refresh-btn'),
+  addRowBtn: document.getElementById('add-row-btn'),
+  viewMode: document.getElementById('view-mode'),
+  eventFilter: document.getElementById('event-filter'),
+  headerEventFilter: document.getElementById('header-event-filter'),
+  boxFilter: document.getElementById('box-filter'),
+  boxFilterOptions: document.getElementById('box-filter-options'),
+  boxOptions: document.getElementById('box-options'),
+  locationFilter: document.getElementById('location-filter'),
+  locationFilterOptions: document.getElementById('location-filter-options'),
+  searchItem: document.getElementById('search-item'),
+  progressCounter: document.getElementById('progress-counter'),
+  locationOptions: document.getElementById('location-options'),
+  eventTagOptions: document.getElementById('event-tag-options'),
+  eventTagsEditor: document.getElementById('event-tags-editor'),
+  eventTagsSaveBtn: document.getElementById('event-tags-save-btn'),
+  capsDialog: document.getElementById('caps-dialog'),
+  capsYesBtn: document.getElementById('caps-yes-btn'),
+  capsNoBtn: document.getElementById('caps-no-btn'),
+  caseAllowlistInput: document.getElementById('case-allowlist-input'),
+  caseAllowlistSaveBtn: document.getElementById('case-allowlist-save-btn'),
+  caseAllowlistResetBtn: document.getElementById('case-allowlist-reset-btn'),
+  boxFilterCard: document.getElementById('box-filter-card'),
+  boxFilterTitle: document.getElementById('box-filter-title'),
+  boxFilterSubtitle: document.getElementById('box-filter-subtitle'),
+  boxFilterDetailId: document.getElementById('box-filter-detail-id'),
+  boxFilterDetailRows: document.getElementById('box-filter-detail-rows'),
+  boxFilterDetailVisible: document.getElementById('box-filter-detail-visible'),
+  boxFilterDetailLinked: document.getElementById('box-filter-detail-linked'),
+  boxFilterDetailLocations: document.getElementById('box-filter-detail-locations'),
+  eventBeaconName: document.getElementById('event-beacon-name'),
+  eventBeaconMeta: document.getElementById('event-beacon-meta'),
+};
+
+// Used to detect when input text is visually truncated (so we only show hover expansion when needed).
+const _truncateCanvas = document.createElement('canvas');
+const _truncateCtx = _truncateCanvas.getContext('2d');
+
+function _buildFontShorthand(style) {
+  // Prefer computed `font` when available; otherwise synthesize a shorthand.
+  if (style.font && style.font !== '') return style.font;
+  const fontStyle = style.fontStyle || 'normal';
+  const fontVariant = style.fontVariant || 'normal';
+  const fontWeight = style.fontWeight || 'normal';
+  const fontSize = style.fontSize || '16px';
+  const lineHeight = style.lineHeight || 'normal';
+  const fontFamily = style.fontFamily || 'sans-serif';
+  return `${fontStyle} ${fontVariant} ${fontWeight} ${fontSize}/${lineHeight} ${fontFamily}`;
+}
+
+function isInputTextTruncated(input) {
+  if (!input || !_truncateCtx) return false;
+  const value = String(input.value || '');
+  if (!value) return false;
+
+  // Most reliable for <input type="text">: if it can scroll horizontally, text is clipped.
+  const previousScrollLeft = input.scrollLeft;
+  input.scrollLeft = 0;
+  input.scrollLeft = 1_000_000;
+  const maxScrollLeft = input.scrollLeft;
+  input.scrollLeft = previousScrollLeft;
+  if (maxScrollLeft > 0) return true;
+
+  const style = window.getComputedStyle(input);
+  _truncateCtx.font = _buildFontShorthand(style);
+
+  let textWidth = _truncateCtx.measureText(value).width;
+
+  // Account for letter-spacing approximately.
+  const letterSpacing = Number.parseFloat(style.letterSpacing);
+  if (!Number.isNaN(letterSpacing) && value.length > 1) {
+    textWidth += letterSpacing * (value.length - 1);
+  }
+
+  const paddingLeft = Number.parseFloat(style.paddingLeft) || 0;
+  const paddingRight = Number.parseFloat(style.paddingRight) || 0;
+
+  // clientWidth includes padding but not borders. Subtract padding to estimate usable text area.
+  const available = Math.max(0, input.clientWidth - paddingLeft - paddingRight);
+  if (textWidth > available + 1) return true;
+
+  // Fallback heuristic for browsers where canvas measurement can under-report form-control text rendering.
+  const fontSize = Number.parseFloat(style.fontSize) || 14;
+  const approxCharWidth = fontSize * 0.55;
+  const approxWidth = value.length * approxCharWidth;
+  return approxWidth > available + 1;
+}
+
+init();
+
+async function init() {
+  await hydrateCaseAllowlistInput();
+  initCapsDialog();
+  restoreSessionFilters();
+  wireEvents();
+  await loadEvents();
+  await loadEventTagCatalog();
+  await loadRows();
+  await checkHealth();
+}
+
+function initCapsDialog() {
+  if (!els.capsDialog) return;
+  els.capsDialog.addEventListener('cancel', (e) => {
+    e.preventDefault();
+  });
+}
+
+function wireEvents() {
+  els.refreshBtn.addEventListener('click', async () => {
+    if (guardDirtyRow()) return;
+    state.boxAccordionMode = false;
+    state.boxFilterCommittedByKeyboard = false;
+    els.boxFilter.value = '';
+    els.locationFilter.value = '';
+    els.searchItem.value = '';
+    await loadRows();
+    await checkHealth();
+  });
+
+  if (els.addRowBtn) {
+    els.addRowBtn.addEventListener('click', () => {
+      if (guardDirtyRow()) return;
+      const blank = {
+        row_id: null,
+        is_new: true,
+        is_active: 1,
+        item_id: null,
+        item_name: null,
+        box_number: null,
+        storage_location: null,
+        event_tags: '',
+        description: '',
+        qty_required: 0,
+        stock_on_hand: 0,
+        qty_flag_limit: null,
+        order_stock_qty: 0,
+        crew_notes: null,
+        restock_comments: null,
+        count_confirmed: 0,
+        version: null,
+      };
+      state.rows.unshift(blank);
+      applyFilters();
+      setStatus('New row added. Link Item first, then complete and Save.');
+    });
+  }
+
+  els.viewMode.addEventListener('change', async () => {
+    if (guardDirtyRow()) {
+      els.viewMode.value = els.viewMode.dataset.prevValue || els.viewMode.value;
+      return;
+    }
+    persistSessionFilters();
+    await loadRows();
+  });
+
+  els.viewMode.addEventListener('focus', () => {
+    els.viewMode.dataset.prevValue = els.viewMode.value;
+  });
+
+  els.boxFilter.addEventListener('change', () => {
+    if (guardDirtyRow()) return;
+    const committedByKeyboard = state.boxFilterCommittedByKeyboard;
+    state.boxFilterCommittedByKeyboard = false;
+    const selectedBox = normalizeBoxValue(els.boxFilter.value);
+    state.boxAccordionMode = Boolean(selectedBox) && !committedByKeyboard;
+    applyFilters();
+  });
+
+  els.boxFilter.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (guardDirtyRow()) return;
+    state.boxFilterCommittedByKeyboard = true;
+    state.boxAccordionMode = false;
+    applyFilters();
+  });
+
+  els.locationFilter.addEventListener('change', () => {
+    if (guardDirtyRow()) return;
+    applyFilters();
+  });
+
+  els.locationFilter.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (guardDirtyRow()) return;
+    applyFilters();
+  });
+
+  els.eventFilter.addEventListener('focus', () => {
+    els.eventFilter.dataset.prevValue = els.eventFilter.value;
+  });
+
+  if (els.headerEventFilter) {
+    els.headerEventFilter.addEventListener('focus', () => {
+      els.headerEventFilter.dataset.prevValue = els.headerEventFilter.value;
+    });
+
+    els.headerEventFilter.addEventListener('change', async () => {
+      if (guardDirtyRow()) {
+        els.headerEventFilter.value = els.headerEventFilter.dataset.prevValue || els.headerEventFilter.value;
+        return;
+      }
+
+      const nextValue = els.headerEventFilter.value || '';
+      els.eventFilter.value = nextValue;
+      els.eventFilter.dataset.prevValue = nextValue;
+      persistSessionFilters();
+      syncEventTagsEditor();
+      renderEventBeacon();
+      syncHeaderEventFilter();
+      await loadRows();
+    });
+  }
+
+  els.eventFilter.addEventListener('change', async () => {
+    if (guardDirtyRow()) {
+      els.eventFilter.value = els.eventFilter.dataset.prevValue || els.eventFilter.value;
+      return;
+    }
+    persistSessionFilters();
+    syncEventTagsEditor();
+    renderEventBeacon();
+    syncHeaderEventFilter();
+    await loadRows();
+  });
+
+  els.searchItem.addEventListener('input', () => {
+    if (guardDirtyRow()) return;
+    applyFilters();
+  });
+
+  if (els.caseAllowlistSaveBtn) {
+    els.caseAllowlistSaveBtn.addEventListener('click', async () => {
+      await saveCaseAllowlistFromInput();
+    });
+  }
+
+  if (els.caseAllowlistResetBtn) {
+    els.caseAllowlistResetBtn.addEventListener('click', async () => {
+      await resetCaseAllowlist();
+    });
+  }
+
+  if (els.eventTagsSaveBtn) {
+    els.eventTagsSaveBtn.addEventListener('click', async () => {
+      await validateAndSaveSelectedEventTags();
+    });
+  }
+}
+
+async function loadRows() {
+  const params = new URLSearchParams({
+    view: els.viewMode.value,
+    box: els.boxFilter.value,
+  });
+  if (els.eventFilter.value) {
+    params.set('event', els.eventFilter.value);
+  }
+
+  setTableState('loading', 'Loading inventory data…');
+  setStatus('Loading inventory data…');
+
+  try {
+    const res = await fetch(`/api/master?${params.toString()}`);
+    const data = await res.json();
+    if (!res.ok) {
+      setTableState('error', data.error || 'Failed to load inventory data. Try again.');
+      setStatus(data.error || 'Load failed. Use Refresh to retry.', true);
+      return;
+    }
+    state.rows = Array.isArray(data) ? data : [];
+    refreshBoxOptions();
+    refreshLocationOptions();
+    refreshEventTagOptions();
+    applyFilters();
+    setStatus(`Loaded ${state.rows.length} rows.`);
+  } catch (err) {
+    setTableState('error', `Unable to reach server: ${err.message}. Check app is running and Refresh.`);
+    setStatus('Load failed. Use Refresh to retry.', true);
+  }
+}
+
+async function loadEvents() {
+  const res = await fetch('/api/events');
+  const events = await res.json();
+  state.events = Array.isArray(events) ? events : [];
+
+  const previouslySelected = sessionStorage.getItem(SESSION_EVENT_KEY) || els.eventFilter.value;
+
+  els.eventFilter.innerHTML = '<option value="">EVERYTHING</option>';
+  if (els.headerEventFilter) {
+    els.headerEventFilter.innerHTML = '<option value="">WHICH EVENT AM I HELPING YOU WITH</option>';
+  }
+  for (const e of events) {
+    const opt = document.createElement('option');
+    opt.value = e.event_name;
+    opt.textContent = e.event_name === 'All' ? 'ALL EVENTS' : e.event_name;
+    els.eventFilter.appendChild(opt);
+
+    if (els.headerEventFilter) {
+      const headerOpt = document.createElement('option');
+      headerOpt.value = e.event_name;
+      headerOpt.textContent = e.event_name === 'All' ? 'ALL EVENTS' : e.event_name;
+      els.headerEventFilter.appendChild(headerOpt);
+    }
+  }
+
+  const eventNames = new Set(state.events.map((e) => e.event_name));
+  if (previouslySelected && eventNames.has(previouslySelected)) {
+    els.eventFilter.value = previouslySelected;
+  }
+
+  persistSessionFilters();
+  syncEventTagsEditor();
+  refreshEventTagOptions();
+  renderEventBeacon();
+  syncHeaderEventFilter();
+}
+
+function syncHeaderEventFilter() {
+  if (!els.headerEventFilter) return;
+  els.headerEventFilter.value = els.eventFilter?.value || '';
+  els.headerEventFilter.dataset.prevValue = els.headerEventFilter.value;
+  setMasterEventChooserWaitingState(!els.headerEventFilter.value);
+}
+
+function setMasterEventChooserWaitingState(isWaiting) {
+  if (!els.headerEventFilter) return;
+  els.headerEventFilter.classList.toggle('is-waiting-event', Boolean(isWaiting));
+}
+
+async function loadEventTagCatalog() {
+  try {
+    const res = await fetch('/api/event-tags');
+    if (!res.ok) {
+      state.catalogEventTagChoices = [];
+      refreshEventTagOptions();
+      return;
+    }
+    const tags = await res.json();
+    state.catalogEventTagChoices = Array.isArray(tags)
+      ? tags
+        .map((t) => {
+          if (typeof t === 'string') return t;
+          if (t && typeof t === 'object' && 'tag_name' in t) return String(t.tag_name || '');
+          return '';
+        })
+        .map((t) => String(t || '').trim().toUpperCase())
+        .filter(Boolean)
+      : [];
+  } catch {
+    state.catalogEventTagChoices = [];
+  }
+  refreshEventTagOptions();
+}
+
+function restoreSessionFilters() {
+  const savedView = sessionStorage.getItem(SESSION_VIEW_KEY);
+  if (savedView && Array.from(els.viewMode.options).some((o) => o.value === savedView)) {
+    els.viewMode.value = savedView;
+  }
+}
+
+function persistSessionFilters() {
+  sessionStorage.setItem(SESSION_EVENT_KEY, els.eventFilter.value || '');
+  sessionStorage.setItem(SESSION_VIEW_KEY, els.viewMode.value || 'all');
+}
+
+function getSelectedEventDefinition() {
+  const selected = els.eventFilter.value;
+  if (!selected) return null;
+  return state.events.find((e) => e.event_name === selected) || null;
+}
+
+function renderEventBeacon() {
+  const selectedEvent = getSelectedEventDefinition();
+  const accent = selectedEvent?.theme_accent_hex || DEFAULT_EVENT_ACCENT;
+  applyEventTheme(accent);
+
+  if (!els.eventBeaconName || !els.eventBeaconMeta) return;
+
+  if (!selectedEvent) {
+    els.eventBeaconName.textContent = '';
+    els.eventBeaconMeta.textContent = 'Select Event to begin stock count.';
+    return;
+  }
+
+  els.eventBeaconName.textContent = selectedEvent.event_name;
+  els.eventBeaconMeta.textContent = `Locked to ${summarizePipeTags(selectedEvent.tags)}`;
+}
+
+function clearEventTagsInputError() {
+  if (!els.eventTagsEditor) return;
+  els.eventTagsEditor.classList.remove('input-invalid');
+  els.eventTagsEditor.removeAttribute('title');
+}
+
+function setEventTagsInputError(message) {
+  if (!els.eventTagsEditor) return;
+  els.eventTagsEditor.classList.add('input-invalid');
+  els.eventTagsEditor.title = message;
+}
+
+function syncEventTagsEditor() {
+  if (!els.eventTagsEditor || !els.eventTagsSaveBtn) return;
+
+  clearEventTagsInputError();
+  const selectedEvent = getSelectedEventDefinition();
+  if (!selectedEvent) {
+    els.eventTagsEditor.value = '';
+    els.eventTagsEditor.disabled = true;
+    els.eventTagsSaveBtn.disabled = true;
+    return;
+  }
+
+  els.eventTagsEditor.disabled = false;
+  els.eventTagsSaveBtn.disabled = false;
+  els.eventTagsEditor.value = String(selectedEvent.tags || '');
+}
+
+async function validateAndSaveSelectedEventTags() {
+  if (!els.eventTagsEditor || !els.eventTagsSaveBtn) return;
+
+  const selectedEvent = getSelectedEventDefinition();
+  if (!selectedEvent) {
+    setStatus('Select a specific Event before editing tags.', true);
+    return;
+  }
+
+  clearEventTagsInputError();
+  const payload = { tags: els.eventTagsEditor.value };
+
+  const res = await fetch(`/api/events/${encodeURIComponent(selectedEvent.event_name)}/tags`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+
+  if (!res.ok) {
+    const message = data.error || 'Event tags update failed.';
+    if (data.field === 'tags') {
+      setEventTagsInputError(message);
+      els.eventTagsEditor.focus();
+    }
+    setStatus(message, true);
+    return;
+  }
+
+  els.eventTagsEditor.value = String(data.tags || '');
+  const idx = state.events.findIndex((e) => e.event_name === data.event_name);
+  if (idx >= 0) {
+    state.events[idx] = data;
+  }
+  clearEventTagsInputError();
+  renderEventBeacon();
+  setStatus(`Saved tags for ${data.event_name}.`);
+  await loadRows();
+}
+
+function applyFilters() {
+  // called after loadRows; body already cleared by renderRows
+  const view = els.viewMode.value;
+  const box = normalizeBoxValue(els.boxFilter.value);
+  const boxKey = canonicalBoxKey(box);
+  const location = els.locationFilter.value.trim().toUpperCase();
+  const desc = els.searchItem.value.trim().toLowerCase();
+
+  state.filteredRows = state.rows.filter((r) => {
+    if (view === 'active' && r.is_active !== 1) return false;
+    if (view === 'inactive' && r.is_active !== 0) return false;
+    if (view === 'unlinked' && (r.item_id !== null && r.item_id !== '')) return false;
+    if (view === 'linked' && (r.item_id === null || r.item_id === '')) return false;
+    if (boxKey && canonicalBoxKey(r.box_number) !== boxKey) return false;
+    if (location && (r.storage_location || '').toUpperCase() !== location) return false;
+    if (desc && !(r.description || '').toLowerCase().includes(desc)) return false;
+    return true;
+  });
+  updateProgress();
+  updateBoxFilterStickyCard();
+  renderRows();
+}
+
+function updateBoxFilterStickyCard() {
+  if (!els.boxFilterCard) return;
+
+  const selectedBox = normalizeBoxValue(els.boxFilter?.value || '');
+  const selectedBoxKey = canonicalBoxKey(selectedBox);
+  if (!selectedBoxKey) {
+    els.boxFilterCard.classList.add('is-hidden');
+    return;
+  }
+
+  const SENTINEL_LABEL = 'LABEL_PENDING';
+  const allBoxRows = state.rows.filter((row) => canonicalBoxKey(row.box_number) === selectedBoxKey);
+  const visibleBoxRows = state.filteredRows.filter((row) => canonicalBoxKey(row.box_number) === selectedBoxKey);
+  const firstMatched = allBoxRows[0] || visibleBoxRows[0] || null;
+
+  const rawLabel = String(firstMatched?.box_label || '').trim();
+  const rawBoxId = String(firstMatched?.box_id || '').trim();
+  const resolvedLabel = rawLabel && rawLabel !== SENTINEL_LABEL ? rawLabel : '';
+  const labelPending = !resolvedLabel;
+  const idPending = !rawBoxId;
+  const linkedCount = allBoxRows.filter((row) => row.item_id !== null && row.item_id !== '').length;
+  const locationList = Array.from(new Set(
+    allBoxRows
+      .map((row) => normalizeLocationValue(row.storage_location))
+      .filter(Boolean),
+  ));
+
+  let locationSummary = '—';
+  if (locationList.length > 0) {
+    const preview = locationList.slice(0, 3).join(', ');
+    locationSummary = locationList.length > 3
+      ? `${preview} +${locationList.length - 3} more`
+      : preview;
+  }
+
+  if (els.boxFilterTitle) {
+    els.boxFilterTitle.textContent = resolvedLabel
+      ? `Box: ${selectedBox} — ${resolvedLabel}`
+      : `Box: ${selectedBox}`;
+  }
+
+  if (els.boxFilterSubtitle) {
+    if (!firstMatched) {
+      els.boxFilterSubtitle.textContent = 'No rows found for the selected box in the current dataset.';
+    } else if (labelPending || idPending) {
+      const missing = [];
+      if (idPending) missing.push('Box ID');
+      if (labelPending) missing.push('Label');
+      els.boxFilterSubtitle.textContent = `Pending metadata: ${missing.join(', ')}`;
+    } else {
+      els.boxFilterSubtitle.textContent = 'Box metadata pinned while filters are active.';
+    }
+  }
+
+  if (els.boxFilterDetailId) els.boxFilterDetailId.textContent = rawBoxId || 'ID_PENDING';
+  if (els.boxFilterDetailRows) els.boxFilterDetailRows.textContent = String(allBoxRows.length);
+  if (els.boxFilterDetailVisible) els.boxFilterDetailVisible.textContent = String(visibleBoxRows.length);
+  if (els.boxFilterDetailLinked) els.boxFilterDetailLinked.textContent = String(linkedCount);
+  if (els.boxFilterDetailLocations) els.boxFilterDetailLocations.textContent = locationSummary;
+
+  els.boxFilterCard.classList.toggle('is-pending', labelPending || idPending);
+  els.boxFilterCard.classList.remove('is-hidden');
+}
+
+function refreshEventTagOptions() {
+  if (!els.eventTagOptions) return;
+
+  const rowTags = state.rows.flatMap((r) => String(r.event_tags || '')
+    .split('|')
+    .map((t) => t.trim().toUpperCase())
+    .filter(Boolean));
+
+  const eventDefinitionTags = state.events.flatMap((e) => String(e.tags || '')
+    .split('|')
+    .map((t) => t.trim().toUpperCase())
+    .filter(Boolean));
+
+  const tags = Array.from(new Set([
+    ...state.catalogEventTagChoices,
+    ...eventDefinitionTags,
+    ...rowTags,
+  ]
+    .filter((t) => t !== 'M')
+    .filter((t) => t !== 'ALL'))).sort((a, b) => a.localeCompare(b));
+
+  state.eventTagChoices = tags;
+
+  els.eventTagOptions.innerHTML = '';
+
+  const allOption = document.createElement('option');
+  allOption.value = '|ALL|';
+  els.eventTagOptions.appendChild(allOption);
+
+  for (const tag of tags) {
+    const opt = document.createElement('option');
+    opt.value = `|${tag}|`;
+    els.eventTagOptions.appendChild(opt);
+  }
+}
+
+function refreshBoxOptions() {
+  if (!els.boxOptions) return;
+
+  state.knownBoxes = Array.from(new Set(
+    state.rows
+      .map((r) => normalizeBoxValue(r.box_number))
+      .filter(Boolean),
+  )).sort((a, b) => a.localeCompare(b));
+
+  els.boxOptions.innerHTML = '';
+
+  for (const box of state.knownBoxes) {
+    const opt = document.createElement('option');
+    opt.value = box;
+    els.boxOptions.appendChild(opt);
+  }
+
+  const addNew = document.createElement('option');
+  addNew.value = '__ADD_NEW__';
+  addNew.label = 'ADD NEW';
+  els.boxOptions.appendChild(addNew);
+
+  if (els.boxFilterOptions) {
+    els.boxFilterOptions.innerHTML = '';
+    for (const box of state.knownBoxes) {
+      const opt = document.createElement('option');
+      opt.value = box;
+      els.boxFilterOptions.appendChild(opt);
+    }
+  }
+}
+
+function refreshLocationOptions() {
+  if (!els.locationOptions) return;
+
+  state.knownLocations = Array.from(new Set(
+    state.rows
+      .map((r) => String(r.storage_location || '').trim().toUpperCase())
+      .filter(Boolean),
+  )).sort((a, b) => a.localeCompare(b));
+
+  els.locationOptions.innerHTML = '';
+  if (els.locationFilterOptions) els.locationFilterOptions.innerHTML = '';
+
+  for (const location of state.knownLocations) {
+    const opt = document.createElement('option');
+    opt.value = location;
+    els.locationOptions.appendChild(opt);
+
+    if (els.locationFilterOptions) {
+      const filterOpt = document.createElement('option');
+      filterOpt.value = location;
+      els.locationFilterOptions.appendChild(filterOpt);
+    }
+  }
+
+  const addNew = document.createElement('option');
+  addNew.value = '__ADD_NEW__';
+  addNew.label = 'ADD NEW';
+  els.locationOptions.appendChild(addNew);
+}
+
+function renderRows() {
+  els.body.innerHTML = '';
+
+  if (state.filteredRows.length === 0 && state.rows.length > 0) {
+    const view = els.viewMode.value;
+    const desc = (els.searchItem?.value || '').trim();
+    const box = (els.boxFilter?.value || '').trim();
+    const loc = (els.locationFilter?.value || '').trim();
+    const evt = (els.eventFilter?.value || '').trim();
+    const hasFilters = desc || box || loc || evt || view !== 'all';
+    const msg = hasFilters
+      ? 'No rows match the current filters. Try adjusting view mode, event, or search text.'
+      : 'No inventory rows found.';
+    setTableState('empty', msg);
+    return;
+  }
+
+  for (const row of state.filteredRows) {
+    const tr = els.rowTemplate.content.firstElementChild.cloneNode(true);
+    tr.dataset.rowId = row.row_id;
+
+    tr.querySelector('.row-id').textContent = row.row_id ?? 'NEW';
+
+    const linkCell = tr.querySelector('.link-status');
+    const isLinked = row.item_id !== null && row.item_id !== '';
+    linkCell.innerHTML = isLinked
+      ? '<span class="badge badge-linked">&#10003; Linked</span>'
+      : '<span class="badge badge-unlinked">&#9679; Unlinked</span>';
+    const saveBtn = tr.querySelector('.save-btn');
+    saveBtn.disabled = !isLinked;
+    saveBtn.title = isLinked ? '' : 'Link item first to unlock Save.';
+
+    const stateBtn = tr.querySelector('.state-toggle');
+    syncStateBtn(stateBtn, row.is_active);
+    stateBtn.disabled = row.row_id == null;
+    stateBtn.title = row.row_id == null ? 'Save row first to enable State toggle.' : '';
+    stateBtn.addEventListener('click', async () => {
+      if (guardDirtyRow(row)) return;
+      const res = await fetch(`/api/master/${row.row_id}/toggle-active`, { method: 'POST' });
+      const payload = await res.json();
+      if (!res.ok) return setStatus(payload.error || 'Toggle failed', true);
+      row.is_active = payload.is_active;
+      syncStateBtn(stateBtn, row.is_active);
+      setStatus(`Row ${row.row_id} is now ${row.is_active ? 'Active' : 'Inactive'}.`);
+    });
+
+    for (const input of tr.querySelectorAll('input[data-field]')) {
+      const field = input.dataset.field;
+      if (field === 'crew_notes' && String(row[field] ?? '').trim().toUpperCase() === 'NONE') {
+        input.value = '';
+        row[field] = '';
+      } else {
+        input.value = row[field] ?? '';
+      }
+      // Block editing this input if a different row currently has unsaved changes.
+      input.addEventListener('focus', () => {
+        if (guardDirtyRow(row)) {
+          setTimeout(() => input.blur(), 0);
+        }
+      });
+      input.addEventListener('input', () => {
+        if (field === 'qty_flag_limit') {
+          row[field] = input.value === '' ? null : Number(input.value);
+          markRowDirty(row, tr);
+          return;
+        }
+        row[field] = input.type === 'number' ? Number(input.value || 0) : input.value;
+        markRowDirty(row, tr);
+      });
+    }
+
+    // Set up hover expansion for crew_notes and restock_comments
+    const crewNotesInput = tr.querySelector('input[data-field="crew_notes"]');
+    const restockCommentsInput = tr.querySelector('input[data-field="restock_comments"]');
+
+    [crewNotesInput, restockCommentsInput].forEach((input) => {
+      if (!input) return;
+      const field = input.dataset.field;
+      const hoverCard = input.parentElement.querySelector('.hover-card');
+      if (!hoverCard) return;
+
+      input.addEventListener('mouseenter', () => {
+        if (input.value) {
+          hoverCard.textContent = input.value;
+          hoverCard.classList.add('active');
+        }
+      });
+
+      input.addEventListener('mouseleave', () => {
+        hoverCard.classList.remove('active');
+      });
+
+      // Click to edit modal; row still must be saved to persist.
+      input.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (guardDirtyRow(row)) return;
+        hoverCard.classList.remove('active');
+        showTextEditModal(input, row, field, tr);
+      });
+    });
+
+    // Set up hover expansion for description and item_name (only if text is truncated)
+    const descInput = tr.querySelector('input[data-field="description"]');
+    const itemNameInputHover = tr.querySelector('input[data-field="item_name"]');
+
+    [descInput, itemNameInputHover].forEach((input) => {
+      if (!input) return;
+      const cell = input.parentElement;
+      const hoverCard = cell ? cell.querySelector('.hover-card') : null;
+      if (!hoverCard) return;
+
+      const showIfTruncated = () => {
+        const field = input.dataset.field;
+        const isDescription = field === 'description';
+        // Description fallback: some browsers under-detect clipping in text inputs.
+        const shouldShow = isInputTextTruncated(input)
+          || (isDescription && String(input.value || '').length > 24);
+
+        if (shouldShow) {
+          hoverCard.textContent = input.value;
+          hoverCard.classList.add('active');
+        }
+      };
+
+      const hide = () => {
+        hoverCard.classList.remove('active');
+      };
+
+      // Trigger when hovering the input or its containing cell.
+      input.addEventListener('mouseenter', showIfTruncated);
+      input.addEventListener('mouseleave', hide);
+      cell.addEventListener('mouseenter', showIfTruncated);
+      cell.addEventListener('mouseleave', hide);
+    });
+
+    // Per-row item_name inline suggestion
+    const itemNameInput = tr.querySelector('input[data-field="item_name"]');
+    const boxInput = tr.querySelector('input[data-field="box_number"]');
+    const locationInput = tr.querySelector('input[data-field="storage_location"]');
+    const tagsInput = tr.querySelector('input[data-field="event_tags"]');
+    const stockInput = tr.querySelector('input[data-field="stock_on_hand"]');
+    const qtyFlagLimitInput = tr.querySelector('input[data-field="qty_flag_limit"]');
+    const rowSuggestBox = tr.querySelector('.row-suggestions');
+
+    const applyQtyFlagState = () => {
+      const stock = Number(row.stock_on_hand || 0);
+      const limit = row.qty_flag_limit === null || row.qty_flag_limit === '' || row.qty_flag_limit === undefined
+        ? null
+        : Number(row.qty_flag_limit);
+
+      if (limit !== null && !Number.isNaN(limit) && stock < limit) {
+        tr.classList.add('row-low-stock');
+        tr.title = `Stock ${stock} is below flag limit ${limit}.`;
+      } else {
+        tr.classList.remove('row-low-stock');
+        tr.removeAttribute('title');
+      }
+    };
+
+    if (stockInput) {
+      stockInput.addEventListener('input', applyQtyFlagState);
+    }
+    if (qtyFlagLimitInput) {
+      qtyFlagLimitInput.addEventListener('input', applyQtyFlagState);
+    }
+    applyQtyFlagState();
+
+    if (boxInput) {
+      boxInput.addEventListener('focus', () => {
+        boxInput.dataset.prevValue = String(boxInput.value || '');
+      });
+
+      boxInput.addEventListener('input', () => {
+        const normalized = normalizeBoxValue(boxInput.value);
+        boxInput.value = normalized;
+        row.box_number = normalized;
+      });
+
+      boxInput.addEventListener('change', () => {
+        if (String(boxInput.value || '').trim() === '__ADD_NEW__') {
+          const allowed = isSeniorAdminSession() || window.confirm('Admin validation required for ADD NEW Box. Continue?');
+          if (!allowed) {
+            const revert = normalizeBoxValue(boxInput.dataset.prevValue || '');
+            boxInput.value = revert;
+            row.box_number = revert;
+            setStatus('ADD NEW Box cancelled.', true);
+            return;
+          }
+
+          boxInput.value = '';
+          row.box_number = '';
+          boxInput.focus();
+          setStatus('ADD NEW Box approved. Enter new box value and Save.');
+          return;
+        }
+
+        const normalized = normalizeBoxValue(boxInput.value);
+        boxInput.value = normalized;
+        row.box_number = normalized;
+      });
+    }
+
+    if (locationInput) {
+      locationInput.addEventListener('focus', () => {
+        locationInput.dataset.prevValue = String(locationInput.value || '');
+      });
+
+      locationInput.addEventListener('input', () => {
+        const normalized = normalizeLocationValue(locationInput.value);
+        locationInput.value = normalized;
+        row.storage_location = normalized;
+      });
+
+      locationInput.addEventListener('change', () => {
+        if (String(locationInput.value || '').trim() === '__ADD_NEW__') {
+          const allowed = isSeniorAdminSession() || window.confirm('Admin validation required for ADD NEW Location. Continue?');
+          if (!allowed) {
+            const revert = normalizeLocationValue(locationInput.dataset.prevValue || '');
+            locationInput.value = revert;
+            row.storage_location = revert;
+            setStatus('ADD NEW Location cancelled.', true);
+            return;
+          }
+
+          locationInput.value = '';
+          row.storage_location = '';
+          locationInput.focus();
+          setStatus('ADD NEW Location approved. Enter new location in ALL CAPS and Save.');
+          return;
+        }
+
+        const normalized = normalizeLocationValue(locationInput.value);
+        locationInput.value = normalized;
+        row.storage_location = normalized;
+      });
+    }
+
+    if (tagsInput) {
+      tagsInput.addEventListener('blur', () => {
+        const normalized = normalizeEventTagsValue(tagsInput.value);
+        tagsInput.value = normalized;
+        row.event_tags = normalized;
+      });
+    }
+
+    itemNameInput.addEventListener('input', async () => {
+      const q = itemNameInput.value.trim();
+      if (!q) { rowSuggestBox.style.display = 'none'; rowSuggestBox.innerHTML = ''; return; }
+      const res = await fetch(`/api/suggest?q=${encodeURIComponent(q)}`);
+      const suggestions = await res.json();
+      if (!suggestions.length) { rowSuggestBox.style.display = 'none'; rowSuggestBox.innerHTML = ''; return; }
+      rowSuggestBox.innerHTML = '';
+      for (const s of suggestions) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'suggestion-item';
+        btn.innerHTML = `<strong>${escapeHtml(s.item_name)}</strong><span class="suggestion-meta">${escapeHtml(s.item_id)} · ${escapeHtml(s.status)}</span>`;
+        btn.addEventListener('mousedown', async (e) => {
+          e.preventDefault();
+          if (row.row_id == null) {
+            row.item_id = s.item_id;
+            row.item_name = s.item_name;
+            itemNameInput.value = s.item_name;
+            tr.querySelector('input[data-field="item_id"]').value = s.item_id;
+            rowSuggestBox.style.display = 'none';
+            rowSuggestBox.innerHTML = '';
+            const localLinkCell = tr.querySelector('.link-status');
+            localLinkCell.innerHTML = '<span class="badge badge-linked">&#10003; Linked</span>';
+            saveBtn.disabled = false;
+            saveBtn.title = '';
+            updateProgress();
+            setStatus('New row linked. Complete required fields and Save.');
+            return;
+          }
+
+          const res2 = await fetch(`/api/master/${row.row_id}/link-item`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: s.item_id, item_name: s.item_name }),
+          });
+          const data = await res2.json();
+          if (!res2.ok) return setStatus(data.error || 'Link failed', true);
+          row.item_id = data.item_id;
+          row.item_name = data.item_name;
+          itemNameInput.value = data.item_name;
+          tr.querySelector('input[data-field="item_id"]').value = data.item_id;
+          rowSuggestBox.style.display = 'none';
+          rowSuggestBox.innerHTML = '';
+          const linkCell = tr.querySelector('.link-status');
+          linkCell.innerHTML = '<span class="badge badge-linked">&#10003; Linked</span>';
+          saveBtn.disabled = false;
+          saveBtn.title = '';
+          updateProgress();
+          setStatus(`Linked row ${row.row_id} → ${s.item_id} / ${s.item_name}`);
+          await checkHealth();
+        });
+        rowSuggestBox.appendChild(btn);
+      }
+      rowSuggestBox.style.display = 'block';
+    });
+
+    itemNameInput.addEventListener('blur', () => {
+      setTimeout(() => { rowSuggestBox.style.display = 'none'; }, 150);
+    });
+
+    saveBtn.addEventListener('click', async () => {
+      const descriptionInput = tr.querySelector('input[data-field="description"]');
+      const crewNotesInput = tr.querySelector('input[data-field="crew_notes"]');
+      const restockCommentsInput = tr.querySelector('input[data-field="restock_comments"]');
+
+      let descriptionValue = stripBrackets(descriptionInput.value || '');
+      let crewNotesValue = stripBrackets(crewNotesInput.value || '');
+      let restockCommentsValue = stripBrackets(restockCommentsInput.value || '');
+
+      const shouldPromptCaps =
+        hasAllCapsWords(descriptionValue) ||
+        hasAllCapsWords(crewNotesValue) ||
+        hasAllCapsWords(restockCommentsValue);
+
+      const keepCapsWords = shouldPromptCaps ? await askRequireCaps() : false;
+
+      descriptionValue = normalizeDescriptionCase(descriptionValue, keepCapsWords);
+      crewNotesValue = normalizeDescriptionCase(crewNotesValue, keepCapsWords);
+      restockCommentsValue = normalizeDescriptionCase(restockCommentsValue, keepCapsWords);
+
+      descriptionInput.value = descriptionValue;
+      crewNotesInput.value = crewNotesValue;
+      restockCommentsInput.value = restockCommentsValue;
+
+      const payload = {
+        item_id: tr.querySelector('input[data-field="item_id"]').value || null,
+        item_name: tr.querySelector('input[data-field="item_name"]').value || null,
+        box_number: normalizeBoxValue(tr.querySelector('input[data-field="box_number"]').value) || null,
+        storage_location: normalizeLocationValue(tr.querySelector('input[data-field="storage_location"]').value) || null,
+        event_tags: normalizeEventTagsValue(tr.querySelector('input[data-field="event_tags"]').value) || null,
+        description: descriptionValue || null,
+        qty_required: tr.querySelector('input[data-field="qty_required"]').value || 0,
+        stock_on_hand: tr.querySelector('input[data-field="stock_on_hand"]').value || 0,
+        qty_flag_limit: tr.querySelector('input[data-field="qty_flag_limit"]').value || null,
+        order_stock_qty: tr.querySelector('input[data-field="order_stock_qty"]').value || null,
+        crew_notes: crewNotesValue || null,
+        restock_comments: restockCommentsValue || null,
+      };
+
+      if (!payload.item_id) {
+        tr.classList.add('row-discrepancy');
+        saveBtn.disabled = true;
+        saveBtn.title = 'Link item first to unlock Save.';
+        return setStatus(`Row ${row.row_id}: WARNING unlinked item. SAVE locked until linked.`, true);
+      }
+
+      const missing = getMissingRequiredFields(payload);
+      if (missing.length > 0) {
+        tr.classList.add('row-discrepancy');
+        return setStatus(`Row ${row.row_id}: complete row before save. Missing: ${missing.join(', ')}`, true);
+      }
+
+      if (!payload.item_id && payload.item_name) {
+        tr.classList.add('row-discrepancy');
+        return setStatus(`Row ${row.row_id}: item_name cannot be set without item_id.`, true);
+      }
+
+      const isNewRow = row.row_id == null;
+      const res = await fetch(isNewRow ? '/api/master' : `/api/master/${row.row_id}`, {
+        method: isNewRow ? 'POST' : 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        tr.classList.add('row-discrepancy');
+        return setStatus(`Row ${row.row_id}: ${data.error || 'Save failed'}`, true);
+      }
+
+      tr.classList.remove('row-discrepancy');
+
+      Object.assign(row, data.row, { is_new: false });
+      clearDirtyRow();
+      Object.assign(row, data.row, { is_new: false });
+      refreshBoxOptions();
+      refreshLocationOptions();
+      setStatus(`${isNewRow ? 'Created' : 'Saved'} row ${row.row_id}.`);
+      await checkHealth();
+      renderRows();
+    });
+
+    els.body.appendChild(tr);
+  }
+
+  if (shouldUseBoxAccordionMode()) {
+    applyBoxAccordionMode();
+  }
+}
+
+function shouldUseBoxAccordionMode() {
+  if (!state.boxAccordionMode) return false;
+  const selectedBoxKey = canonicalBoxKey(els.boxFilter?.value || '');
+  if (!selectedBoxKey) return false;
+  if (state.filteredRows.length <= 1) return false;
+
+  return state.filteredRows.every((row) => canonicalBoxKey(row.box_number) === selectedBoxKey);
+}
+
+function applyBoxAccordionMode() {
+  const renderedRows = Array.from(els.body.querySelectorAll('tr'));
+  if (renderedRows.length === 0) return;
+
+  const selectedBox = normalizeBoxValue(els.boxFilter?.value || '');
+  const selectedBoxKey = canonicalBoxKey(selectedBox);
+  if (!selectedBoxKey) return;
+
+  const SENTINEL_LABEL = 'LABEL_PENDING';
+
+  const firstMatched = state.filteredRows.find(
+    (row) => canonicalBoxKey(row.box_number) === selectedBoxKey,
+  );
+  const rawLabel = String(firstMatched?.box_label || '').trim();
+  const rawBoxId = String(firstMatched?.box_id || '').trim();
+  const resolvedLabel = (rawLabel === SENTINEL_LABEL) ? '' : rawLabel;
+  const labelPending = rawLabel === SENTINEL_LABEL;
+  const idPending = rawBoxId === '';          // NULL/empty = box_id not yet assigned
+  const hasPending = labelPending || idPending;
+
+  let isExpanded = false;
+  const updateRowsVisibility = () => {
+    for (const row of renderedRows) {
+      row.classList.toggle('box-group-collapsed-row', !isExpanded);
+      row.classList.toggle('box-group-expanded-row', isExpanded);
+    }
+  };
+
+  updateRowsVisibility();
+
+  const headerRow = document.createElement('tr');
+  headerRow.className = 'box-group-header-row';
+  const headerCell = document.createElement('td');
+  headerCell.colSpan = 16;
+  headerCell.className = 'box-group-header-cell';
+  headerRow.appendChild(headerCell);
+
+  const controls = document.createElement('div');
+  controls.className = 'box-group-toggle-wrap';
+
+  const title = document.createElement('div');
+  title.className = 'box-group-title';
+  title.textContent = resolvedLabel
+    ? `Box: ${selectedBox} - ${resolvedLabel}`
+    : `Box: ${selectedBox}`;
+
+  if (hasPending) {
+    const pendingParts = [];
+    if (idPending) pendingParts.push('Box ID');
+    if (labelPending) pendingParts.push('Label');
+    const badge = document.createElement('span');
+    badge.className = 'box-pending-badge';
+    badge.title = `Pending: ${pendingParts.join(', ')} not yet assigned`;
+    badge.textContent = '⚠ Pending';
+    title.appendChild(badge);
+  }
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.className = 'btn secondary box-group-toggle-btn';
+
+  const updateLabel = () => {
+    const count = renderedRows.length;
+    toggleBtn.textContent = isExpanded
+      ? `Collapse (${count} row${count === 1 ? '' : 's'})`
+      : `Expand (${count} row${count === 1 ? '' : 's'})`;
+  };
+
+  toggleBtn.addEventListener('click', () => {
+    isExpanded = !isExpanded;
+    updateRowsVisibility();
+    updateLabel();
+  });
+
+  updateLabel();
+  controls.appendChild(title);
+  controls.appendChild(toggleBtn);
+  headerCell.appendChild(controls);
+  els.body.insertBefore(headerRow, renderedRows[0]);
+}
+
+function normalizeDescriptionCase(value, keepCapsWords) {
+  return sharedNormalizeDescriptionCase(value, keepCapsWords);
+}
+
+async function hydrateCaseAllowlistInput() {
+  if (!els.caseAllowlistInput) return;
+  const tokens = await loadCaseAllowlist();
+  els.caseAllowlistInput.value = formatAllowlistForInput(tokens);
+}
+
+async function saveCaseAllowlistFromInput() {
+  if (!els.caseAllowlistInput) return;
+  const result = await sharedSaveCaseAllowlist(els.caseAllowlistInput.value);
+  if (!result.ok) {
+    setStatus(result.error, true);
+    return;
+  }
+
+  els.caseAllowlistInput.value = formatAllowlistForInput(result.tokens);
+  setStatus(`Admin allow list saved (${result.tokens.length} term${result.tokens.length === 1 ? '' : 's'}).`);
+}
+
+async function resetCaseAllowlist() {
+  const tokens = await sharedResetCaseAllowlist();
+  if (els.caseAllowlistInput) {
+    els.caseAllowlistInput.value = formatAllowlistForInput(tokens);
+  }
+  setStatus('Admin allow list reset to defaults.');
+}
+
+function stripBrackets(value) {
+  return String(value || '')
+    .replace(/[\[\](){}]/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function getMissingRequiredFields(payload) {
+  const requiredText = [
+    ['item_id', 'Item ID'],
+    ['item_name', 'Item Name'],
+    ['box_number', 'Box'],
+    ['storage_location', 'Location'],
+    ['event_tags', 'Event Tags'],
+    ['description', 'Description'],
+  ];
+
+  const missing = [];
+  for (const [field, label] of requiredText) {
+    if (!String(payload[field] || '').trim()) missing.push(label);
+  }
+
+  if (payload.qty_required === '' || Number.isNaN(Number(payload.qty_required))) missing.push('Qty Req');
+  if (payload.stock_on_hand === '' || Number.isNaN(Number(payload.stock_on_hand))) missing.push('Stock');
+
+  return missing;
+}
+
+function normalizeEventTagTokens(value) {
+  return Array.from(new Set(
+    String(value || '')
+      .replaceAll(',', '|')
+      .split('|')
+      .map((part) => part.trim().toUpperCase())
+      .filter(Boolean)
+      .filter((part) => /^[A-Z0-9_\-]+$/.test(part)),
+  ));
+}
+
+function normalizeLocationValue(value) {
+  return String(value || '').trim().replace(/\s{2,}/g, ' ').toUpperCase();
+}
+
+function normalizeBoxValue(value) {
+  return String(value || '').trim().replace(/\s{2,}/g, ' ').toUpperCase();
+}
+
+function canonicalBoxKey(value) {
+  return normalizeBoxValue(value).replace(/[^A-Z0-9]/g, '');
+}
+
+function isSeniorAdminSession() {
+  const role = String(window.__USER_ROLE__ || window.APP_USER_ROLE || '').trim().toLowerCase();
+  return role === 'senior_admin' || role === 'senior-admin' || role === 'senior admin' || role === 'admin';
+}
+
+function normalizeEventTagsValue(value) {
+  const tokens = normalizeEventTagTokens(value);
+  if (!tokens.length) return '';
+  if (tokens.includes('ALL')) return '|ALL|';
+
+  return tokens.map((t) => `|${t}|`).join('');
+}
+
+function mergeEventTagSelections(beforeValue, afterValue) {
+  const selected = normalizeEventTagTokens(afterValue);
+  if (selected.includes('ALL')) return '|ALL|';
+
+  const before = normalizeEventTagTokens(beforeValue).filter((t) => t !== 'ALL');
+  const merged = Array.from(new Set([...before, ...selected]));
+
+  return merged.map((t) => `|${t}|`).join('');
+}
+
+function askRequireCaps() {
+  if (
+    !els.capsDialog ||
+    !els.capsYesBtn ||
+    !els.capsNoBtn ||
+    typeof els.capsDialog.showModal !== 'function'
+  ) {
+    return Promise.resolve(window.confirm('Require Caps?\n\nOK = Yes, keep ALL CAPS\nCancel = No, apply capitalization rule'));
+  }
+
+  return new Promise((resolve) => {
+    const onYes = () => close(true);
+    const onNo = () => close(false);
+
+    const close = (answer) => {
+      els.capsYesBtn.removeEventListener('click', onYes);
+      els.capsNoBtn.removeEventListener('click', onNo);
+      els.capsDialog.close();
+      resolve(answer);
+    };
+
+    els.capsYesBtn.addEventListener('click', onYes);
+    els.capsNoBtn.addEventListener('click', onNo);
+    try {
+      els.capsDialog.showModal();
+    } catch {
+      els.capsYesBtn.removeEventListener('click', onYes);
+      els.capsNoBtn.removeEventListener('click', onNo);
+      resolve(window.confirm('Require Caps?\n\nOK = Yes, keep ALL CAPS\nCancel = No, apply capitalization rule'));
+    }
+  });
+}
+
+function syncStateBtn(btn, isActive) {
+  btn.textContent = isActive ? 'Active' : 'Inactive';
+  btn.classList.toggle('state-active', isActive === 1);
+  btn.classList.toggle('state-inactive', isActive === 0);
+}
+
+function updateProgress() {
+  const total = state.rows.length;
+  const linked = state.rows.filter((r) => r.item_id !== null && r.item_id !== '').length;
+  const unlinked = total - linked;
+  const pct = total ? Math.round((linked / total) * 100) : 0;
+  els.progressCounter.innerHTML =
+    `<span class="prog-linked">${linked} linked</span>` +
+    `<span class="prog-sep">/</span>` +
+    `<span class="prog-unlinked">${unlinked} unlinked</span>` +
+    `<span class="prog-pct">${pct}%</span>` +
+    `<span class="prog-bar"><span class="prog-fill" style="width:${pct}%"></span></span>`;
+}
+
+async function checkHealth() {
+  const res = await fetch('/api/health');
+  const h = await res.json();
+  if (h.foreign_key_violations > 0) {
+    setStatus(`WARNING: FK violations = ${h.foreign_key_violations}`, true);
+  }
+}
+
+// ─── Dirty-Row Management ───────────────────────────────────────────────────
+
+/**
+ * Mark a row as dirty (has unsaved edits).
+ * Adds the .row-dirty class and updates the save button label.
+ */
+function markRowDirty(row, tr) {
+  dirtyState.row = row;
+  dirtyState.tr = tr;
+  tr.classList.add('row-dirty');
+  const saveBtn = tr.querySelector('.save-btn');
+  if (saveBtn && !saveBtn.disabled) {
+    saveBtn.textContent = 'Save \u2731';
+  }
+}
+
+/**
+ * Clear the dirty state after a successful save (or discard).
+ * Removes visual dirty indicators and resets the save button label.
+ */
+function clearDirtyRow() {
+  if (dirtyState.tr) {
+    dirtyState.tr.classList.remove('row-dirty', 'row-dirty-flash');
+    const saveBtn = dirtyState.tr.querySelector('.save-btn');
+    if (saveBtn) saveBtn.textContent = 'Save';
+  }
+  dirtyState.row = null;
+  dirtyState.tr = null;
+}
+
+/**
+ * Briefly flash the dirty row to draw the user's eye to it.
+ */
+function flashDirtyRow() {
+  if (!dirtyState.tr) return;
+  dirtyState.tr.classList.add('row-dirty-flash');
+  setTimeout(() => {
+    if (dirtyState.tr) dirtyState.tr.classList.remove('row-dirty-flash');
+  }, 800);
+}
+
+/**
+ * Guard an action: returns true (blocked) when a dirty row exists that is NOT
+ * the row currently initiating the action.
+ * @param {object|null} callerRow – the row object associated with the action,
+ *   or null for global actions (refresh, add row, filters, etc.).
+ */
+function guardDirtyRow(callerRow = null) {
+  if (!dirtyState.row) return false;
+  if (callerRow && dirtyState.row === callerRow) return false;
+  flashDirtyRow();
+  const label = dirtyState.row.row_id != null ? `Row ${dirtyState.row.row_id}` : 'New Row';
+  setStatus(`\u26A0 ${label} has unsaved changes \u2014 save the row before proceeding.`, true);
+  return true;
+}
+
+/**
+ * Show text edit modal for crew_notes or restock_comments fields.
+ * Changes must be saved in the row - no proceed without save.
+ */
+function showTextEditModal(inputElement, row, fieldName, tr) {
+  const currentValue = inputElement.value || '';
+
+  // Create backdrop
+  const backdrop = document.createElement('div');
+  backdrop.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  `;
+
+  // Create modal
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    background: var(--surface);
+    border: 1px solid var(--primary);
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 520px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  `;
+
+  // Title
+  const title = document.createElement('h3');
+  title.textContent = fieldName === 'crew_notes' ? 'Edit Notes' : 'Edit Restock Comments';
+  title.style.cssText = 'margin: 0 0 12px 0; color: var(--text); font-size: 1.1rem;';
+
+  // Help text
+  const helpText = document.createElement('p');
+  helpText.style.cssText = 'margin: 0 0 10px 0; font-size: 0.85rem; color: var(--muted);';
+  helpText.textContent = 'Maximum 200 characters. You must SAVE the row to proceed.';
+
+  // Textarea
+  const textarea = document.createElement('textarea');
+  textarea.value = currentValue;
+  textarea.maxLength = 200;
+  textarea.style.cssText = `
+    width: 100%;
+    min-height: 140px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-soft);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    resize: vertical;
+    margin-bottom: 12px;
+    box-sizing: border-box;
+    font-family: inherit;
+  `;
+
+  // Character counter
+  const charCountDiv = document.createElement('div');
+  charCountDiv.style.cssText = 'margin-bottom: 16px; font-size: 0.8rem; color: var(--muted); text-align: right;';
+  const charSpan = document.createElement('span');
+  charSpan.textContent = currentValue.length;
+  charCountDiv.appendChild(charSpan);
+  charCountDiv.appendChild(document.createTextNode('/200'));
+
+  textarea.addEventListener('input', () => {
+    charSpan.textContent = textarea.value.length;
+  });
+
+  textarea.addEventListener('focus', () => {
+    textarea.style.borderColor = 'var(--primary)';
+    textarea.style.boxShadow = '0 0 0 2px rgba(79, 140, 255, 0.22)';
+  });
+
+  textarea.addEventListener('blur', () => {
+    textarea.style.borderColor = 'var(--border)';
+    textarea.style.boxShadow = 'none';
+  });
+
+  // Button container
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.cssText = 'display: flex; gap: 8px; justify-content: flex-end;';
+
+  // Cancel button
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.className = 'btn secondary';
+  cancelBtn.style.cssText = 'cursor: pointer;';
+  cancelBtn.onclick = () => {
+    backdrop.remove();
+  };
+
+  // Save button - marks row dirty
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Update & Mark for Save';
+  saveBtn.className = 'btn';
+  saveBtn.style.cssText = 'cursor: pointer;';
+  saveBtn.onclick = () => {
+    inputElement.value = textarea.value;
+    row[fieldName] = textarea.value;
+    backdrop.remove();
+    markRowDirty(row, tr);
+    setStatus(`${fieldName === 'crew_notes' ? 'Notes' : 'Restock Comments'} updated. Click Save button in row to persist.`);
+  };
+
+  buttonContainer.appendChild(cancelBtn);
+  buttonContainer.appendChild(saveBtn);
+
+  // Assemble modal
+  modal.appendChild(title);
+  modal.appendChild(helpText);
+  modal.appendChild(textarea);
+  modal.appendChild(charCountDiv);
+  modal.appendChild(buttonContainer);
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+
+  // Auto-focus textarea
+  textarea.focus();
+  textarea.select();
+
+  // Close on Escape
+  const onEscape = (e) => {
+    if (e.key === 'Escape') {
+      backdrop.remove();
+      document.removeEventListener('keydown', onEscape);
+    }
+  };
+  document.addEventListener('keydown', onEscape);
+
+  // Close on backdrop click
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) {
+      backdrop.remove();
+      document.removeEventListener('keydown', onEscape);
+    }
+  });
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+
+function setStatus(message, isError = false) {
+  els.statusBar.textContent = message;
+  els.statusBar.style.color = isError ? '#ff9aa8' : 'var(--muted)';
+}
+
+/**
+ * Renders a loading, error, or empty placeholder row into the main tbody.
+ * @param {'loading'|'error'|'empty'} type
+ * @param {string} message
+ */
+function setTableState(type, message) {
+  if (!els.body) return;
+  const colSpan = 17;
+  els.body.innerHTML = `<tr><td colspan="${colSpan}" class="table-state table-state--${type}">
+    <span class="table-state-icon">${type === 'loading' ? '⏳' : type === 'error' ? '⚠️' : 'ℹ️'}</span>
+    <span class="table-state-msg">${escapeHtml(message)}</span>
+    ${type === 'error' ? `<button class="btn secondary table-state-retry" type="button">Retry</button>` : ''}
+  </td></tr>`;
+  if (type === 'error') {
+    els.body.querySelector('.table-state-retry')?.addEventListener('click', () => loadRows());
+  }
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.cell-item-name')) {
+    document.querySelectorAll('.row-suggestions').forEach((d) => { d.style.display = 'none'; });
+  }
+});
+// Block editing this input if a different row currently has unsaved changes
