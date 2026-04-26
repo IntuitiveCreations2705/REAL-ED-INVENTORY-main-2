@@ -652,7 +652,7 @@ body {
 }
 
 .master-shell .controls {
-  grid-template-columns: 650px 350px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 350px 290px;
 }
 
 .control {
