@@ -517,6 +517,41 @@ def create_app() -> Flask:
     def system_map_source() -> Any:
         return send_file(SOURCE_FILE, mimetype="text/markdown")
 
+    @app.get("/api/tier-layer-status")
+    def tier_layer_status() -> Any:
+        """
+        Return per-tier device/role activity for the layered system map view.
+        Phase 1: queries users table for role counts. Named-person mapping is a
+        future phase — slots are reserved in the response shape now.
+        """
+        TIER_ROLE_MAP: dict[str, list[str]] = {
+            "mom_l2": ["superadmin"],
+            "mom_l1": ["superadmin", "admin"],
+            "tier1":  [],  # service layer — no human roles assigned
+            "tier2_1": ["admin"],
+            "tier2_2": ["leadership"],
+            "tier3":  ["operator", "viewer"],
+        }
+        try:
+            with get_conn() as conn:
+                rows = conn.execute(
+                    "SELECT role, COUNT(*) as cnt FROM users WHERE is_active = 1 GROUP BY role"
+                ).fetchall()
+                active_by_role: dict[str, int] = {r["role"]: r["cnt"] for r in rows}
+        except Exception:
+            active_by_role = {}
+
+        result: dict[str, Any] = {}
+        for tier_key, roles in TIER_ROLE_MAP.items():
+            total = sum(active_by_role.get(r, 0) for r in roles)
+            result[tier_key] = {
+                "roles": roles,
+                "active_count": total,
+                # Named people populated in future phase
+                "members": [],
+            }
+        return jsonify({"status": "ok", "tiers": result})
+
     @app.get("/api/suggest")
     def suggest() -> Any:
         term = request.args.get("q", "").strip()
