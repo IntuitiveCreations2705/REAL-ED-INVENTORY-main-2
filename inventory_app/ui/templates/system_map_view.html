@@ -26,100 +26,31 @@
 
     html, body {
       height: 100%; overflow: hidden;
-      background: var(--bg); color: var(--text);
+      background: transparent; color: var(--text);
       font-family: Inter, "Segoe UI", system-ui, sans-serif;
     }
 
-    /* ── canvas ── */
+    /* ── canvas: fixed center container ── */
     #canvas {
-      position: fixed; inset: 0;
-      display: flex; align-items: center; justify-content: center;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       cursor: ew-resize;
+      z-index: 100;
+      pointer-events: auto;
     }
 
-    /* ── glass stack container ── */
+    /* ── glass stack container: fixed 780px ── */
     #glass-stack {
       position: relative;
-      width: 780px; height: 460px;
-    }
-
-    /* iPad responsive sizes */
-    @media (max-width: 1024px) {
-      #glass-stack {
-        width: 660px;
-        height: 400px;
-      }
-      .g-layer {
-        padding: 24px 28px 20px;
-      }
-      .g-layer h2 {
-        font-size: 20px;
-      }
-      .g-layer .desc {
-        font-size: 12px;
-      }
-    }
-
-    /* iPad Mini and smaller tablets */
-    @media (max-width: 768px) {
-      #glass-stack {
-        width: calc(100vw - 32px);
-        max-width: 560px;
-        height: 320px;
-      }
-      .g-layer {
-        padding: 18px 22px 16px;
-        gap: 8px;
-      }
-      .g-layer .badge {
-        font-size: 8px;
-        padding: 2px 8px;
-      }
-      .g-layer h2 {
-        font-size: 18px;
-        margin-top: 4px;
-      }
-      .g-layer .desc {
-        font-size: 11px;
-        line-height: 1.5;
-      }
-      .device-count {
-        font-size: 16px;
-      }
-      .device-line {
-        font-size: 10px;
-      }
-      #topbar {
-        height: 44px;
-        padding: 0 16px;
-        gap: 12px;
-      }
-      #topbar h1 {
-        font-size: 13px;
-      }
-      #topbar .hint {
-        font-size: 10px;
-        display: none;
-      }
-      .arrow {
-        width: 32px;
-        height: 32px;
-        font-size: 14px;
-      }
-      #arrow-l {
-        left: 10px;
-      }
-      #arrow-r {
-        right: 10px;
-      }
-      #dot-nav {
-        bottom: 16px;
-        gap: 8px;
-      }
-      .d-dot {
-        width: 7px;
-        height: 7px;
-      }
+      width: 780px;
+      height: 460px;
     }
 
     /* ── individual glass layer ── */
@@ -409,17 +340,10 @@ LAYERS.forEach((l, i) => {
 });
 
 /* ─── Depth offset — each stacked layer peeks behind the next ─ */
-function getOffsetScale() {
-  if (window.innerWidth <= 768) {
-    return { x: 8, y: 6 };   // iPad Mini
-  } else if (window.innerWidth <= 1024) {
-    return { x: 11, y: 8 };  // iPad Air
-  }
-  return { x: 14, y: 10 };   // Desktop
-}
-
 function applyDepthOffsets() {
-  const { x: OFFSET_X, y: OFFSET_Y } = getOffsetScale();
+  const OFFSET_X = 14;  // px shift right per level below top
+  const OFFSET_Y = 10;  // px shift down per level below top
+  
   LAYERS.forEach((_, i) => {
     const panel = stackEl.children[i];
     if (i >= revealed) {
@@ -530,11 +454,6 @@ async function loadTierStatus() {
     });
   } catch (_) { /* silent — degraded ok */ }
 }
-
-/* ─── Responsive resize handler ─────────────────────────────── */
-window.addEventListener('resize', () => {
-  applyDepthOffsets();
-});
 
 /* ─── Init ──────────────────────────────────────────────────── */
 revealed = 1;

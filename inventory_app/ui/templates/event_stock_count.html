@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5, user-scalable=yes, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- origin:ADEANE::ME::IOWNIT::2026 -->
   <title>Event Stock Count</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='admin_theme.css') }}" />
@@ -23,6 +23,7 @@
           </select>
           <div class="header-actions">
             <a class="btn secondary btn-link" href="{{ url_for('index') }}">Admin Master</a>
+            <button id="open-sysmap-btn" class="btn secondary" type="button">System Map</button>
             <button id="refresh-btn" class="btn secondary">Refresh</button>
           </div>
         </div>
@@ -92,6 +93,43 @@
   <datalist id="box-filter-options"></datalist>
   <datalist id="location-filter-options"></datalist>
   <script type="module" src="{{ url_for('static', filename='event_stock_count.js') }}"></script>
+
+  <!-- System Map modal overlay -->
+  <div id="sysmap-backdrop" role="dialog" aria-modal="true" aria-label="System Layer Map">
+    <div id="sysmap-modal">
+      <button id="sysmap-close" aria-label="Close System Map" title="Close (Esc)">&#x2715;</button>
+      <iframe id="sysmap-frame" src="" title="System Layer Map"></iframe>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const btn      = document.getElementById('open-sysmap-btn');
+      const backdrop = document.getElementById('sysmap-backdrop');
+      const frame    = document.getElementById('sysmap-frame');
+      const closeBtn = document.getElementById('sysmap-close');
+      const SYSMAP_URL = '{{ url_for("system_map_page") }}';
+
+      function openModal() {
+        if (!frame.src || frame.src === window.location.href) {
+          frame.src = SYSMAP_URL;
+        }
+        backdrop.classList.add('open');
+        closeBtn.focus();
+      }
+      function closeModal() {
+        backdrop.classList.remove('open');
+      }
+
+      btn.addEventListener('click', openModal);
+      closeBtn.addEventListener('click', closeModal);
+      backdrop.addEventListener('click', function (e) {
+        if (e.target === backdrop) closeModal();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && backdrop.classList.contains('open')) closeModal();
+      });
+    })();
+  </script>
 </body>
 
 </html>
