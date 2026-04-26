@@ -1,12 +1,19 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <!-- origin:ADEANE::ME::IOWNIT::2026 -->
   <title>System Layer Map</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
     :root {
       --bg: #070c1b;
@@ -15,18 +22,35 @@
       --border: #1a2648;
 
       /* per-layer palette: bg / border / accent */
-      --db-bg:    rgba(8, 30, 22,  0.72);  --db-b:  #1b6b4a;  --db-a:  #4fffb0;
-      --t1-bg:    rgba(8, 18, 42,  0.68);  --t1-b:  #1b3d80;  --t1-a:  #78b4ff;
-      --ml2-bg:   rgba(22, 8, 42,  0.68);  --ml2-b: #5a1a8c;  --ml2-a: #c97fff;
-      --ml1-bg:   rgba(34, 8, 20,  0.68);  --ml1-b: #8c1a40;  --ml1-a: #ff7aaa;
-      --t21-bg:   rgba(32, 20, 5,  0.68);  --t21-b: #7a5010;  --t21-a: #ffd06e;
-      --t22-bg:   rgba(5,  26, 34, 0.68);  --t22-b: #10607a;  --t22-a: #5eeeff;
-      --rol-bg:   rgba(5,  22, 5,  0.68);  --rol-b: #1a5c1a;  --rol-a: #80ff80;
+      --db-bg: rgba(8, 30, 22, 0.72);
+      --db-b: #1b6b4a;
+      --db-a: #4fffb0;
+      --t1-bg: rgba(8, 18, 42, 0.68);
+      --t1-b: #1b3d80;
+      --t1-a: #78b4ff;
+      --ml2-bg: rgba(22, 8, 42, 0.68);
+      --ml2-b: #5a1a8c;
+      --ml2-a: #c97fff;
+      --ml1-bg: rgba(34, 8, 20, 0.68);
+      --ml1-b: #8c1a40;
+      --ml1-a: #ff7aaa;
+      --t21-bg: rgba(32, 20, 5, 0.68);
+      --t21-b: #7a5010;
+      --t21-a: #ffd06e;
+      --t22-bg: rgba(5, 26, 34, 0.68);
+      --t22-b: #10607a;
+      --t22-a: #5eeeff;
+      --rol-bg: rgba(5, 22, 5, 0.68);
+      --rol-b: #1a5c1a;
+      --rol-a: #80ff80;
     }
 
-    html, body {
-      height: 100%; overflow: hidden;
-      background: transparent; color: var(--text);
+    html,
+    body {
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      color: var(--text);
       font-family: Inter, "Segoe UI", system-ui, sans-serif;
     }
 
@@ -55,13 +79,15 @@
 
     /* ── individual glass layer ── */
     .g-layer {
-      position: absolute; inset: 0;
+      position: absolute;
+      inset: 0;
       border-radius: 20px;
       border: 1.5px solid transparent;
       backdrop-filter: blur(18px) saturate(1.4);
       -webkit-backdrop-filter: blur(18px) saturate(1.4);
       padding: 32px 36px 26px;
-      display: grid; grid-template-rows: auto 1fr auto;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
       gap: 12px;
 
       /* default: waiting off-screen to the right */
@@ -69,7 +95,7 @@
       opacity: 0;
       transition:
         transform 0.58s cubic-bezier(0.32, 0, 0.18, 1),
-        opacity   0.42s ease,
+        opacity 0.42s ease,
         box-shadow 0.4s ease;
       will-change: transform, opacity;
       pointer-events: none;
@@ -102,96 +128,266 @@
     /* applied via JS as inline style so predecessors peek out */
 
     .g-layer .badge {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-      padding: 3px 11px; border-radius: 20px; border: 1px solid;
-      width: fit-content; backdrop-filter: blur(4px);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      padding: 3px 11px;
+      border-radius: 20px;
+      border: 1px solid;
+      width: fit-content;
+      backdrop-filter: blur(4px);
     }
-    .g-layer h2 { font-size: 24px; font-weight: 800; line-height: 1.2; margin-top: 8px; }
-    .g-layer .desc { font-size: 13px; line-height: 1.65; color: rgba(221,228,255,0.78); }
-    .g-layer .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+
+    .g-layer h2 {
+      font-size: 24px;
+      font-weight: 800;
+      line-height: 1.2;
+      margin-top: 8px;
+    }
+
+    .g-layer .desc {
+      font-size: 13px;
+      line-height: 1.65;
+      color: rgba(221, 228, 255, 0.78);
+    }
+
+    .g-layer .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 8px;
+    }
+
     .chip {
-      font-size: 11px; font-weight: 600; padding: 4px 12px;
-      border-radius: 20px; border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(255,255,255,0.07);
-      display: flex; align-items: center; gap: 5px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(255, 255, 255, 0.07);
+      display: flex;
+      align-items: center;
+      gap: 5px;
     }
-    .chip-dot { width: 6px; height: 6px; border-radius: 50%; }
+
+    .chip-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+
     .device-line {
-      font-size: 11px; color: var(--muted);
-      display: flex; align-items: center; gap: 6px; margin-top: 4px;
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 4px;
     }
-    .device-count { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+    .device-count {
+      font-size: 19px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
 
     /* ── colour bindings ── */
-    .g-layer[data-k="db"]  { background: var(--db-bg);  border-color: var(--db-b); }
-    .g-layer[data-k="t1"]  { background: var(--t1-bg);  border-color: var(--t1-b); }
-    .g-layer[data-k="ml2"] { background: var(--ml2-bg); border-color: var(--ml2-b); }
-    .g-layer[data-k="ml1"] { background: var(--ml1-bg); border-color: var(--ml1-b); }
-    .g-layer[data-k="t21"] { background: var(--t21-bg); border-color: var(--t21-b); }
-    .g-layer[data-k="t22"] { background: var(--t22-bg); border-color: var(--t22-b); }
-    .g-layer[data-k="rol"] { background: var(--rol-bg); border-color: var(--rol-b); }
+    .g-layer[data-k="db"] {
+      background: var(--db-bg);
+      border-color: var(--db-b);
+    }
 
-    .g-layer[data-k="db"].top  { box-shadow: 0 0 60px 10px rgba(79,255,176,.14), 0 12px 48px rgba(0,0,0,.55); }
-    .g-layer[data-k="t1"].top  { box-shadow: 0 0 60px 10px rgba(120,180,255,.14), 0 12px 48px rgba(0,0,0,.55); }
-    .g-layer[data-k="ml2"].top { box-shadow: 0 0 60px 10px rgba(201,127,255,.14), 0 12px 48px rgba(0,0,0,.55); }
-    .g-layer[data-k="ml1"].top { box-shadow: 0 0 60px 10px rgba(255,122,170,.14), 0 12px 48px rgba(0,0,0,.55); }
-    .g-layer[data-k="t21"].top { box-shadow: 0 0 60px 10px rgba(255,208,110,.14), 0 12px 48px rgba(0,0,0,.55); }
-    .g-layer[data-k="t22"].top { box-shadow: 0 0 60px 10px rgba(94,238,255,.14), 0 12px 48px rgba(0,0,0,.55); }
-    .g-layer[data-k="rol"].top { box-shadow: 0 0 60px 10px rgba(128,255,128,.14), 0 12px 48px rgba(0,0,0,.55); }
+    .g-layer[data-k="t1"] {
+      background: var(--t1-bg);
+      border-color: var(--t1-b);
+    }
+
+    .g-layer[data-k="ml2"] {
+      background: var(--ml2-bg);
+      border-color: var(--ml2-b);
+    }
+
+    .g-layer[data-k="ml1"] {
+      background: var(--ml1-bg);
+      border-color: var(--ml1-b);
+    }
+
+    .g-layer[data-k="t21"] {
+      background: var(--t21-bg);
+      border-color: var(--t21-b);
+    }
+
+    .g-layer[data-k="t22"] {
+      background: var(--t22-bg);
+      border-color: var(--t22-b);
+    }
+
+    .g-layer[data-k="rol"] {
+      background: var(--rol-bg);
+      border-color: var(--rol-b);
+    }
+
+    .g-layer[data-k="db"].top {
+      box-shadow: 0 0 60px 10px rgba(79, 255, 176, .14), 0 12px 48px rgba(0, 0, 0, .55);
+    }
+
+    .g-layer[data-k="t1"].top {
+      box-shadow: 0 0 60px 10px rgba(120, 180, 255, .14), 0 12px 48px rgba(0, 0, 0, .55);
+    }
+
+    .g-layer[data-k="ml2"].top {
+      box-shadow: 0 0 60px 10px rgba(201, 127, 255, .14), 0 12px 48px rgba(0, 0, 0, .55);
+    }
+
+    .g-layer[data-k="ml1"].top {
+      box-shadow: 0 0 60px 10px rgba(255, 122, 170, .14), 0 12px 48px rgba(0, 0, 0, .55);
+    }
+
+    .g-layer[data-k="t21"].top {
+      box-shadow: 0 0 60px 10px rgba(255, 208, 110, .14), 0 12px 48px rgba(0, 0, 0, .55);
+    }
+
+    .g-layer[data-k="t22"].top {
+      box-shadow: 0 0 60px 10px rgba(94, 238, 255, .14), 0 12px 48px rgba(0, 0, 0, .55);
+    }
+
+    .g-layer[data-k="rol"].top {
+      box-shadow: 0 0 60px 10px rgba(128, 255, 128, .14), 0 12px 48px rgba(0, 0, 0, .55);
+    }
 
     /* ── top bar ── */
     #topbar {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 200;
-      height: 50px; background: rgba(7,12,27,.88); backdrop-filter: blur(14px);
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 200;
+      height: 50px;
+      background: rgba(7, 12, 27, .88);
+      backdrop-filter: blur(14px);
       border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; padding: 0 22px; gap: 18px;
+      display: flex;
+      align-items: center;
+      padding: 0 22px;
+      gap: 18px;
     }
-    #topbar h1 { font-size: 14px; font-weight: 700; letter-spacing: .04em; }
-    #topbar .hint { font-size: 12px; color: var(--muted); }
-    #topbar .spacer { flex: 1; }
+
+    #topbar h1 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+
+    #topbar .hint {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    #topbar .spacer {
+      flex: 1;
+    }
+
     #active-badge {
-      font-size: 12px; font-weight: 700; padding: 4px 14px; border-radius: 20px;
-      background: rgba(255,255,255,.05); border: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 14px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, .05);
+      border: 1px solid var(--border);
       transition: color .3s, border-color .3s;
     }
 
     /* ── bottom dot nav ── */
     #dot-nav {
-      position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
-      display: flex; gap: 10px; z-index: 200;
+      position: fixed;
+      bottom: 22px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      z-index: 200;
     }
+
     .d-dot {
-      width: 9px; height: 9px; border-radius: 50%;
-      background: var(--border); border: 1px solid var(--border);
-      cursor: pointer; transition: background .28s, transform .28s, border-color .28s;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--border);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: background .28s, transform .28s, border-color .28s;
     }
-    .d-dot.done  { opacity: .6; }
-    .d-dot.live  { transform: scale(1.5); }
+
+    .d-dot.done {
+      opacity: .6;
+    }
+
+    .d-dot.live {
+      transform: scale(1.5);
+    }
 
     /* ── progress line ── */
     #prog {
-      position: fixed; bottom: 0; left: 0; right: 0; height: 2px;
-      background: var(--border); z-index: 200;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--border);
+      z-index: 200;
     }
-    #prog-fill { height: 100%; background: #4f8cff; transition: width .5s ease, background .4s; }
+
+    #prog-fill {
+      height: 100%;
+      background: #4f8cff;
+      transition: width .5s ease, background .4s;
+    }
 
     /* ── scroll arrows ── */
     .arrow {
-      position: fixed; top: 50%; z-index: 200;
+      position: fixed;
+      top: 50%;
+      z-index: 200;
       transform: translateY(-50%);
-      width: 36px; height: 36px; border-radius: 50%;
-      background: rgba(255,255,255,.06); border: 1px solid var(--border);
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; font-size: 16px; color: var(--muted);
-      transition: background .2s, color .2s; user-select: none;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, .06);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      color: var(--muted);
+      transition: background .2s, color .2s;
+      user-select: none;
     }
-    .arrow:hover { background: rgba(255,255,255,.12); color: var(--text); }
-    #arrow-l { left: 14px; }
-    #arrow-r { right: 14px; }
-    .arrow.hidden { opacity: 0; pointer-events: none; }
+
+    .arrow:hover {
+      background: rgba(255, 255, 255, .12);
+      color: var(--text);
+    }
+
+    #arrow-l {
+      left: 14px;
+    }
+
+    #arrow-r {
+      right: 14px;
+    }
+
+    .arrow.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
   </style>
 </head>
+
 <body>
 
   <!-- top bar -->
@@ -215,99 +411,101 @@
   <nav id="dot-nav" aria-label="Layer navigation"></nav>
 
   <!-- progress bar -->
-  <div id="prog"><div id="prog-fill"></div></div>
+  <div id="prog">
+    <div id="prog-fill"></div>
+  </div>
 
-<script>
-/* ─── Layer definitions ─────────────────────────────────────── */
-const LAYERS = [
-  {
-    k: "db", badge: "Foundation · Data Core",
-    title: "Data Core",
-    accentVar: "--db-a",
-    desc: "SQLite database, db.py connection layer, WAL journal mode, FK enforcement, app origin fingerprint, schema migration pipeline. The authoritative persistence layer for all inventory, audit, and identity records.",
-    roles: [],
-    apiKey: null,
-  },
-  {
-    k: "t1", badge: "Tier 1 · Service Layer",
-    title: "Core Service & Sync",
-    accentVar: "--t1-a",
-    desc: "Flask backend (app.py), API endpoints, validation pipeline, satellite sync controller, conflict detection, audit writer. Consumed by all UI tiers. No direct staff UI surface.",
-    roles: [{ label: "Service Layer — API only", color: "#78b4ff" }],
-    apiKey: "tier1",
-  },
-  {
-    k: "ml2", badge: "Tier 0 · MOM-L2 Engineering",
-    title: "Engineering Console",
-    accentVar: "--ml2-a",
-    desc: "Schema & version management, repair tools, migration controls, rule governance, BOX prefix allocation, app versioning. Owner + approved engineering admins only.",
-    roles: [{ label: "superadmin", color: "#c97fff" }],
-    apiKey: "mom_l2",
-  },
-  {
-    k: "ml1", badge: "Tier 0 · MOM-L1 Operations",
-    title: "Operations Console",
-    accentVar: "--ml1-a",
-    desc: "Monitoring, sync controls, diagnostics, feature flags, incident response, conflict resolution. IT Professional + Owner only. Not available to staff.",
-    roles: [
-      { label: "superadmin", color: "#ff7aaa" },
-      { label: "admin", color: "#ffa0c0" },
-    ],
-    apiKey: "mom_l1",
-  },
-  {
-    k: "t21", badge: "Tier 2.1 · Admin Staff",
-    title: "Admin Staff UI",
-    accentVar: "--t21-a",
-    desc: "Full inventory visibility, global edits across all BOX prefixes. Master data governance, approval and validation of satellite changes, sync conflict resolution.",
-    roles: [{ label: "admin", color: "#ffd06e" }],
-    apiKey: "tier2_1",
-  },
-  {
-    k: "t22", badge: "Tier 2.2 · Leadership",
-    title: "Leadership UI",
-    accentVar: "--t22-a",
-    desc: "BOX-prefix-restricted edit scope. Approve satellite changes, resolve sync conflicts, manage team data. Roles: Workshop Mentor · Crew Leader · Project Coordinator · Training Coordinator · Scheduling Coordinator · Task Team Leader.",
-    roles: [
-      { label: "Workshop Mentor", color: "#5eeeff" },
-      { label: "Crew Leader", color: "#5eeeff" },
-      { label: "Project Coordinator", color: "#5eeeff" },
-      { label: "Scheduling Coordinator", color: "#5eeeff" },
-    ],
-    apiKey: "tier2_2",
-  },
-  {
-    k: "rol", badge: "Role Map · Overlay",
-    title: "Role → Tier Alignment",
-    accentVar: "--rol-a",
-    desc: "All active roles mapped to their tier anchor. Named people will populate here in a future phase. Each role class is bounded by its tier — no role spans above its assigned tier ceiling.",
-    roles: [
-      { label: "superadmin → MOM L1/L2", color: "#c97fff" },
-      { label: "admin → Tier 2.1 + MOM L1", color: "#ffd06e" },
-      { label: "leadership → Tier 2.2", color: "#5eeeff" },
-      { label: "operator → Tier 3", color: "#80ff80" },
-      { label: "viewer → Tier 3", color: "#a0ffa0" },
-    ],
-    apiKey: null,
-  },
-];
+  <script>
+    /* ─── Layer definitions ─────────────────────────────────────── */
+    const LAYERS = [
+      {
+        k: "db", badge: "Foundation · Data Core",
+        title: "Data Core",
+        accentVar: "--db-a",
+        desc: "SQLite database, db.py connection layer, WAL journal mode, FK enforcement, app origin fingerprint, schema migration pipeline. The authoritative persistence layer for all inventory, audit, and identity records.",
+        roles: [],
+        apiKey: null,
+      },
+      {
+        k: "t1", badge: "Tier 1 · Service Layer",
+        title: "Core Service & Sync",
+        accentVar: "--t1-a",
+        desc: "Flask backend (app.py), API endpoints, validation pipeline, satellite sync controller, conflict detection, audit writer. Consumed by all UI tiers. No direct staff UI surface.",
+        roles: [{ label: "Service Layer — API only", color: "#78b4ff" }],
+        apiKey: "tier1",
+      },
+      {
+        k: "ml2", badge: "Tier 0 · MOM-L2 Engineering",
+        title: "Engineering Console",
+        accentVar: "--ml2-a",
+        desc: "Schema & version management, repair tools, migration controls, rule governance, BOX prefix allocation, app versioning. Owner + approved engineering admins only.",
+        roles: [{ label: "superadmin", color: "#c97fff" }],
+        apiKey: "mom_l2",
+      },
+      {
+        k: "ml1", badge: "Tier 0 · MOM-L1 Operations",
+        title: "Operations Console",
+        accentVar: "--ml1-a",
+        desc: "Monitoring, sync controls, diagnostics, feature flags, incident response, conflict resolution. IT Professional + Owner only. Not available to staff.",
+        roles: [
+          { label: "superadmin", color: "#ff7aaa" },
+          { label: "admin", color: "#ffa0c0" },
+        ],
+        apiKey: "mom_l1",
+      },
+      {
+        k: "t21", badge: "Tier 2.1 · Admin Staff",
+        title: "Admin Staff UI",
+        accentVar: "--t21-a",
+        desc: "Full inventory visibility, global edits across all BOX prefixes. Master data governance, approval and validation of satellite changes, sync conflict resolution.",
+        roles: [{ label: "admin", color: "#ffd06e" }],
+        apiKey: "tier2_1",
+      },
+      {
+        k: "t22", badge: "Tier 2.2 · Leadership",
+        title: "Leadership UI",
+        accentVar: "--t22-a",
+        desc: "BOX-prefix-restricted edit scope. Approve satellite changes, resolve sync conflicts, manage team data. Roles: Workshop Mentor · Crew Leader · Project Coordinator · Training Coordinator · Scheduling Coordinator · Task Team Leader.",
+        roles: [
+          { label: "Workshop Mentor", color: "#5eeeff" },
+          { label: "Crew Leader", color: "#5eeeff" },
+          { label: "Project Coordinator", color: "#5eeeff" },
+          { label: "Scheduling Coordinator", color: "#5eeeff" },
+        ],
+        apiKey: "tier2_2",
+      },
+      {
+        k: "rol", badge: "Role Map · Overlay",
+        title: "Role → Tier Alignment",
+        accentVar: "--rol-a",
+        desc: "All active roles mapped to their tier anchor. Named people will populate here in a future phase. Each role class is bounded by its tier — no role spans above its assigned tier ceiling.",
+        roles: [
+          { label: "superadmin → MOM L1/L2", color: "#c97fff" },
+          { label: "admin → Tier 2.1 + MOM L1", color: "#ffd06e" },
+          { label: "leadership → Tier 2.2", color: "#5eeeff" },
+          { label: "operator → Tier 3", color: "#80ff80" },
+          { label: "viewer → Tier 3", color: "#a0ffa0" },
+        ],
+        apiKey: null,
+      },
+    ];
 
-/* ─── State ─────────────────────────────────────────────────── */
-let revealed = 0;   // how many layers are currently in the stack (0 = none visible)
-const stackEl  = document.getElementById('glass-stack');
-const dotsEl   = document.getElementById('dot-nav');
-const badgeEl  = document.getElementById('active-badge');
-const progFill = document.getElementById('prog-fill');
-const arrowL   = document.getElementById('arrow-l');
-const arrowR   = document.getElementById('arrow-r');
+    /* ─── State ─────────────────────────────────────────────────── */
+    let revealed = 0;   // how many layers are currently in the stack (0 = none visible)
+    const stackEl = document.getElementById('glass-stack');
+    const dotsEl = document.getElementById('dot-nav');
+    const badgeEl = document.getElementById('active-badge');
+    const progFill = document.getElementById('prog-fill');
+    const arrowL = document.getElementById('arrow-l');
+    const arrowR = document.getElementById('arrow-r');
 
-/* ─── Build glass panel DOM ─────────────────────────────────── */
-LAYERS.forEach((l, i) => {
-  const panel = document.createElement('div');
-  panel.className = 'g-layer';
-  panel.dataset.k = l.k;
-  panel.dataset.i = i;
-  panel.innerHTML = `
+    /* ─── Build glass panel DOM ─────────────────────────────────── */
+    LAYERS.forEach((l, i) => {
+      const panel = document.createElement('div');
+      panel.className = 'g-layer';
+      panel.dataset.k = l.k;
+      panel.dataset.i = i;
+      panel.innerHTML = `
     <div>
       <span class="badge" id="badge-${i}">${l.badge}</span>
       <h2 id="title-${i}">${l.title}</h2>
@@ -321,146 +519,147 @@ LAYERS.forEach((l, i) => {
       </div>
     </div>
   `;
-  stackEl.appendChild(panel);
+      stackEl.appendChild(panel);
 
-  l.roles.forEach(r => {
-    const chip = document.createElement('span');
-    chip.className = 'chip';
-    chip.innerHTML = `<span class="chip-dot" style="background:${r.color}"></span>${r.label}`;
-    panel.querySelector(`#chips-${i}`).appendChild(chip);
-  });
+      l.roles.forEach(r => {
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.innerHTML = `<span class="chip-dot" style="background:${r.color}"></span>${r.label}`;
+        panel.querySelector(`#chips-${i}`).appendChild(chip);
+      });
 
-  // nav dot
-  const dot = document.createElement('div');
-  dot.className = 'd-dot';
-  dot.dataset.i = i;
-  dot.title = l.badge;
-  dot.addEventListener('click', () => jumpTo(i));
-  dotsEl.appendChild(dot);
-});
-
-/* ─── Depth offset — each stacked layer peeks behind the next ─ */
-function applyDepthOffsets() {
-  const OFFSET_X = 14;  // px shift right per level below top
-  const OFFSET_Y = 10;  // px shift down per level below top
-  
-  LAYERS.forEach((_, i) => {
-    const panel = stackEl.children[i];
-    if (i >= revealed) {
-      panel.style.transform = 'translateX(110%)';
-      panel.style.opacity   = '0';
-      panel.style.zIndex    = i;
-      panel.classList.remove('stacked', 'top');
-      return;
-    }
-    const depthFromTop = revealed - 1 - i;  // 0 = topmost
-    const ox = depthFromTop * OFFSET_X;
-    const oy = depthFromTop * OFFSET_Y;
-    const isTop = depthFromTop === 0;
-    const op = isTop ? 1 : Math.max(0.45, 1 - depthFromTop * 0.14);
-
-    panel.style.transform  = `translateX(${ox}px) translateY(${oy}px)`;
-    panel.style.opacity    = op;
-    panel.style.zIndex     = revealed - depthFromTop;
-    panel.classList.toggle('stacked', !isTop);
-    panel.classList.toggle('top', isTop);
-  });
-}
-
-/* ─── Navigation ────────────────────────────────────────────── */
-function updateMeta() {
-  const topIdx = revealed - 1;
-  const layer  = LAYERS[topIdx >= 0 ? topIdx : 0];
-  const accent = getComputedStyle(document.documentElement)
-    .getPropertyValue(layer.accentVar).trim();
-
-  badgeEl.textContent       = topIdx >= 0 ? layer.badge : '—';
-  badgeEl.style.color       = topIdx >= 0 ? accent : '';
-  badgeEl.style.borderColor = topIdx >= 0 ? accent : '';
-
-  const pct = LAYERS.length > 1
-    ? ((revealed - 1) / (LAYERS.length - 1)) * 100 : 0;
-  progFill.style.width      = Math.max(0, pct) + '%';
-  progFill.style.background = topIdx >= 0 ? accent : '#4f8cff';
-
-  document.querySelectorAll('.d-dot').forEach((d, i) => {
-    const inStack = i < revealed;
-    const isTop   = i === revealed - 1;
-    d.classList.toggle('done', inStack && !isTop);
-    d.classList.toggle('live', isTop);
-    if (inStack) {
-      d.style.background  = accent;
-      d.style.borderColor = accent;
-      d.style.opacity     = isTop ? '1' : '0.5';
-    } else {
-      d.style.background  = '';
-      d.style.borderColor = '';
-      d.style.opacity     = '';
-    }
-  });
-
-  arrowL.classList.toggle('hidden', revealed <= 1);
-  arrowR.classList.toggle('hidden', revealed >= LAYERS.length);
-}
-
-function step(dir) {
-  const next = revealed + dir;
-  if (next < 1 || next > LAYERS.length) return;
-  revealed = next;
-  applyDepthOffsets();
-  updateMeta();
-}
-
-function jumpTo(targetIndex) {
-  revealed = targetIndex + 1;
-  applyDepthOffsets();
-  updateMeta();
-}
-
-/* ─── Horizontal scroll (mouse wheel) ──────────────────────── */
-let wheelAccum = 0;
-const THRESHOLD = 70;
-
-document.getElementById('canvas').addEventListener('wheel', e => {
-  e.preventDefault();
-  const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-  wheelAccum += delta;
-  if (Math.abs(wheelAccum) >= THRESHOLD) {
-    step(wheelAccum > 0 ? 1 : -1);
-    wheelAccum = 0;
-  }
-}, { passive: false });
-
-document.addEventListener('keydown', e => {
-  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') step(1);
-  if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   step(-1);
-});
-
-/* ─── Live tier device counts ───────────────────────────────── */
-async function loadTierStatus() {
-  try {
-    const res  = await fetch('/api/tier-layer-status');
-    const data = await res.json();
-    if (data.status !== 'ok') return;
-    LAYERS.forEach((l, i) => {
-      if (!l.apiKey || !data.tiers[l.apiKey]) return;
-      const cnt = data.tiers[l.apiKey].active_count;
-      const el  = document.getElementById(`dcnt-${i}`);
-      if (!el) return;
-      const accent = getComputedStyle(document.documentElement)
-        .getPropertyValue(l.accentVar).trim();
-      el.textContent = cnt;
-      el.style.color = cnt > 0 ? accent : 'var(--muted)';
+      // nav dot
+      const dot = document.createElement('div');
+      dot.className = 'd-dot';
+      dot.dataset.i = i;
+      dot.title = l.badge;
+      dot.addEventListener('click', () => jumpTo(i));
+      dotsEl.appendChild(dot);
     });
-  } catch (_) { /* silent — degraded ok */ }
-}
 
-/* ─── Init ──────────────────────────────────────────────────── */
-revealed = 1;
-applyDepthOffsets();
-updateMeta();
-loadTierStatus();
-setInterval(loadTierStatus, 30000);
-</script>
+    /* ─── Depth offset — each stacked layer peeks behind the next ─ */
+    function applyDepthOffsets() {
+      const OFFSET_X = 14;  // px shift right per level below top
+      const OFFSET_Y = 10;  // px shift down per level below top
+
+      LAYERS.forEach((_, i) => {
+        const panel = stackEl.children[i];
+        if (i >= revealed) {
+          panel.style.transform = 'translateX(110%)';
+          panel.style.opacity = '0';
+          panel.style.zIndex = i;
+          panel.classList.remove('stacked', 'top');
+          return;
+        }
+        const depthFromTop = revealed - 1 - i;  // 0 = topmost
+        const ox = depthFromTop * OFFSET_X;
+        const oy = depthFromTop * OFFSET_Y;
+        const isTop = depthFromTop === 0;
+        const op = isTop ? 1 : Math.max(0.45, 1 - depthFromTop * 0.14);
+
+        panel.style.transform = `translateX(${ox}px) translateY(${oy}px)`;
+        panel.style.opacity = op;
+        panel.style.zIndex = revealed - depthFromTop;
+        panel.classList.toggle('stacked', !isTop);
+        panel.classList.toggle('top', isTop);
+      });
+    }
+
+    /* ─── Navigation ────────────────────────────────────────────── */
+    function updateMeta() {
+      const topIdx = revealed - 1;
+      const layer = LAYERS[topIdx >= 0 ? topIdx : 0];
+      const accent = getComputedStyle(document.documentElement)
+        .getPropertyValue(layer.accentVar).trim();
+
+      badgeEl.textContent = topIdx >= 0 ? layer.badge : '—';
+      badgeEl.style.color = topIdx >= 0 ? accent : '';
+      badgeEl.style.borderColor = topIdx >= 0 ? accent : '';
+
+      const pct = LAYERS.length > 1
+        ? ((revealed - 1) / (LAYERS.length - 1)) * 100 : 0;
+      progFill.style.width = Math.max(0, pct) + '%';
+      progFill.style.background = topIdx >= 0 ? accent : '#4f8cff';
+
+      document.querySelectorAll('.d-dot').forEach((d, i) => {
+        const inStack = i < revealed;
+        const isTop = i === revealed - 1;
+        d.classList.toggle('done', inStack && !isTop);
+        d.classList.toggle('live', isTop);
+        if (inStack) {
+          d.style.background = accent;
+          d.style.borderColor = accent;
+          d.style.opacity = isTop ? '1' : '0.5';
+        } else {
+          d.style.background = '';
+          d.style.borderColor = '';
+          d.style.opacity = '';
+        }
+      });
+
+      arrowL.classList.toggle('hidden', revealed <= 1);
+      arrowR.classList.toggle('hidden', revealed >= LAYERS.length);
+    }
+
+    function step(dir) {
+      const next = revealed + dir;
+      if (next < 1 || next > LAYERS.length) return;
+      revealed = next;
+      applyDepthOffsets();
+      updateMeta();
+    }
+
+    function jumpTo(targetIndex) {
+      revealed = targetIndex + 1;
+      applyDepthOffsets();
+      updateMeta();
+    }
+
+    /* ─── Horizontal scroll (mouse wheel) ──────────────────────── */
+    let wheelAccum = 0;
+    const THRESHOLD = 70;
+
+    document.getElementById('canvas').addEventListener('wheel', e => {
+      e.preventDefault();
+      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      wheelAccum += delta;
+      if (Math.abs(wheelAccum) >= THRESHOLD) {
+        step(wheelAccum > 0 ? 1 : -1);
+        wheelAccum = 0;
+      }
+    }, { passive: false });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') step(1);
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') step(-1);
+    });
+
+    /* ─── Live tier device counts ───────────────────────────────── */
+    async function loadTierStatus() {
+      try {
+        const res = await fetch('/api/tier-layer-status');
+        const data = await res.json();
+        if (data.status !== 'ok') return;
+        LAYERS.forEach((l, i) => {
+          if (!l.apiKey || !data.tiers[l.apiKey]) return;
+          const cnt = data.tiers[l.apiKey].active_count;
+          const el = document.getElementById(`dcnt-${i}`);
+          if (!el) return;
+          const accent = getComputedStyle(document.documentElement)
+            .getPropertyValue(l.accentVar).trim();
+          el.textContent = cnt;
+          el.style.color = cnt > 0 ? accent : 'var(--muted)';
+        });
+      } catch (_) { /* silent — degraded ok */ }
+    }
+
+    /* ─── Init ──────────────────────────────────────────────────── */
+    revealed = 1;
+    applyDepthOffsets();
+    updateMeta();
+    loadTierStatus();
+    setInterval(loadTierStatus, 30000);
+  </script>
 </body>
+
 </html>
