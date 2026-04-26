@@ -32,6 +32,7 @@ const dirtyState = {
 };
 
 const SESSION_EVENT_KEY = 'admin.master.event';
+const SHARED_EVENT_SCOPE_KEY = 'inventory.shared.event';
 const SESSION_VIEW_KEY = 'admin.master.view';
 
 const els = {
@@ -328,7 +329,10 @@ async function loadEvents() {
   const events = await res.json();
   state.events = Array.isArray(events) ? events : [];
 
-  const previouslySelected = sessionStorage.getItem(SESSION_EVENT_KEY) || els.eventFilter.value;
+  const previouslySelected =
+    sessionStorage.getItem(SHARED_EVENT_SCOPE_KEY)
+    || sessionStorage.getItem(SESSION_EVENT_KEY)
+    || els.eventFilter.value;
 
   els.eventFilter.innerHTML = '<option value="">EVERYTHING</option>';
   if (els.headerEventFilter) {
@@ -406,6 +410,7 @@ function restoreSessionFilters() {
 
 function persistSessionFilters() {
   sessionStorage.setItem(SESSION_EVENT_KEY, els.eventFilter.value || '');
+  sessionStorage.setItem(SHARED_EVENT_SCOPE_KEY, els.eventFilter.value || '');
   sessionStorage.setItem(SESSION_VIEW_KEY, els.viewMode.value || 'all');
 }
 
