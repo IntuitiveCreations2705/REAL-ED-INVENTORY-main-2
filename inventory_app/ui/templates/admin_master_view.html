@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5, user-scalable=yes, viewport-fit=cover" />
   <!-- origin:ADEANE::ME::IOWNIT::2026 -->
   <title>Admin Master Inventory</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='admin_theme.css') }}" />
@@ -76,14 +76,14 @@
       </header>
 
       <section class="card controls">
-        <div class="control small">
-          <label for="box-filter">Box filter</label>
-          <input id="box-filter" type="text" list="box-filter-options" placeholder="e.g. A-01" />
-        </div>
-
-        <div class="control">
+        <div class="control control-description">
           <label for="search-item">Filter by Description</label>
           <input id="search-item" type="text" placeholder="Type text from description column" />
+        </div>
+
+        <div class="control small control-box">
+          <label for="box-filter">Box filter</label>
+          <input id="box-filter" type="text" list="box-filter-options" placeholder="e.g. A-01" />
         </div>
 
         <div class="control small">

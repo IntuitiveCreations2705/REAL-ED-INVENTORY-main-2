@@ -27,12 +27,31 @@
   --radius: 12px;
   --radius-sm: 8px;
   --touch-target: 40px;
-  --shell-max-width: 1920px;
-  --shell-padding: clamp(8px, 1.8vw, 14px);
+  /* iPad-first default: 768px iPad width */
+  --shell-max-width: 100%;
+  --shell-width: clamp(320px, calc(100vw - 24px), 768px);
+  --shell-padding: clamp(12px, 1.5vw, 20px);
   --stock-col-box-anchor-x: clamp(16px, 2vw, 30px);
   --stock-col-location-anchor-x: clamp(16px, 2vw, 30px);
   --font: Inter, "Segoe UI", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* Larger screens (desktop 1025px+) */
+@media (min-width: 1025px) {
+  :root {
+    --shell-max-width: 1920px;
+    --shell-width: calc(100vw - 24px);
+    --shell-padding: clamp(8px, 1.8vw, 14px);
+  }
+}
+
+/* Smaller tablets/phones (320px-768px) */
+@media (max-width: 768px) {
+  :root {
+    --shell-width: calc(100vw - 16px);
+    --shell-padding: 12px;
+  }
 }
 
 :root[data-theme='high-contrast'] {
@@ -105,7 +124,7 @@ body {
 
 .app-shell {
   max-width: var(--shell-max-width);
-  width: calc(100vw - 24px);
+  width: var(--shell-width);
   min-width: 320px;
   margin: 0 auto;
   padding: var(--shell-padding);
@@ -625,6 +644,10 @@ body {
   display: grid;
   grid-template-columns: 1.8fr 1fr 1fr;
   gap: 8px;
+}
+
+.master-shell .controls {
+  grid-template-columns: 650px 350px minmax(0, 1fr);
 }
 
 .control {
@@ -2427,5 +2450,121 @@ tbody tr.row-dirty-flash {
     flex-direction: row;
     flex-wrap: wrap;
     justify-content: space-between;
+  }
+}
+
+/* ─── iPad-Responsive Typography & Components ─────────────────────────────── */
+/* Base: iPad (default starting point, optimized for touch and readability) */
+
+/* Desktop / Large screens: scale up slightly */
+@media (min-width: 1025px) {
+  body {
+    font-size: 11.5pt;
+  }
+  
+  .header h1 {
+    font-size: clamp(24px, 3vw, 32px);
+  }
+  
+  .card {
+    padding: clamp(16px, 2vw, 24px);
+  }
+  
+  .table-wrap table th,
+  .table-wrap table td {
+    padding: clamp(10px, 1.5vw, 16px);
+    font-size: 11pt;
+  }
+}
+
+/* Tablet / iPad Air & large tablets (769px - 1024px) */
+@media (max-width: 1024px) {
+  body {
+    font-size: 10.5pt;
+  }
+  
+  .header h1 {
+    font-size: 22px;
+  }
+  
+  .card {
+    padding: 14px 16px;
+  }
+  
+  .table-wrap table th,
+  .table-wrap table td {
+    padding: 8px 12px;
+    font-size: 10pt;
+  }
+  
+  .btn {
+    padding: 8px 14px;
+    font-size: 10pt;
+  }
+  
+  input[type="text"],
+  input[type="email"],
+  input[type="number"],
+  textarea,
+  select {
+    padding: 8px 10px;
+    font-size: 10pt;
+  }
+}
+
+/* Mobile / Small tablets (max 768px) */
+@media (max-width: 768px) {
+  body {
+    font-size: 10pt;
+  }
+  
+  .header h1 {
+    font-size: 18px;
+  }
+  
+  .header p {
+    font-size: 9pt;
+  }
+  
+  .card {
+    padding: 12px 14px;
+  }
+  
+  .table-wrap table {
+    font-size: 9pt;
+  }
+  
+  .table-wrap table th,
+  .table-wrap table td {
+    padding: 6px 10px;
+  }
+  
+  .btn {
+    padding: 6px 12px;
+    font-size: 9pt;
+    min-height: 36px;
+  }
+  
+  input[type="text"],
+  input[type="email"],
+  input[type="number"],
+  textarea,
+  select {
+    padding: 6px 8px;
+    font-size: 9pt;
+    min-height: 36px;
+  }
+  
+  .controls {
+    gap: 8px;
+  }
+  
+  .control {
+    padding: 8px;
+  }
+  
+  .header-actions {
+    flex-wrap: wrap;
+    gap: 8px;
   }
 }

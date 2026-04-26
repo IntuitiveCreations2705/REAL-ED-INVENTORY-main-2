@@ -514,9 +514,9 @@ function applyFilters() {
     if (view === 'inactive' && r.is_active !== 0) return false;
     if (view === 'unlinked' && (r.item_id !== null && r.item_id !== '')) return false;
     if (view === 'linked' && (r.item_id === null || r.item_id === '')) return false;
+    if (desc && !(r.description || '').toLowerCase().includes(desc)) return false;
     if (boxKey && canonicalBoxKey(r.box_number) !== boxKey) return false;
     if (location && (r.storage_location || '').toUpperCase() !== location) return false;
-    if (desc && !(r.description || '').toLowerCase().includes(desc)) return false;
     return true;
   });
   updateProgress();
