@@ -110,6 +110,24 @@ The cycle `item_id → item → box_number → box_id_list` is not closed at DB 
 
 ---
 
+## P2 — Backup encryption at rest
+
+- [ ] GPG-encrypt backup `.sql.gz` files before storage
+  - Current state: backups are compressed but unencrypted — readable by any entity with file access
+  - Current `.sha256` verification also stores absolute temp path, breaking portable `shasum -c` on foreign devices
+  - Implementation: pipe `auto_backup.sh` output through `gpg --symmetric` or `gpg --encrypt` with a stored key
+  - Paired change: update `verify_backup.sh` and `restore_db.sh` to decrypt before verify/restore
+  - Fix `.sha256` to store filename only (no absolute path) for portable cross-device verification
+  - Key management strategy TBD — passphrase-protected symmetric key minimum; asymmetric key preferred for offsite restore scenarios
+
+- [ ] Implement two-person split-custody disaster recovery model
+  - Custodian A holds encrypted SSD package (app + DB + restore assets) with no credential secrets
+  - Custodian B holds decryption/key access path only (no routine access to SSD payload)
+  - Keep decryption key in two secure places: phone secure vault (primary) + emergency encrypted USB stick (backup)
+  - Add a short disaster runbook (steps only, no raw passwords) and schedule periodic restore drill checks
+
+---
+
 ## P2 — Phase 2 placeholder isolation
 
 - [ ] Gate `global_sync_status.js`, `global_conflict_handler.js`, `global_role_context.js` behind feature flag

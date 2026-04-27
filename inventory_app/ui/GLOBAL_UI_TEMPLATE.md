@@ -2,6 +2,22 @@
 
 Status: **Active baseline (14-Apr-2026)**
 
+## App Identity (Governance Record — not rendered in UI)
+
+| Field | Value |
+|---|---|
+| App Name | ADEANE |
+| Owner | ME |
+| Built By | IOWNIT |
+| Origin Year | 2026 |
+
+> **Display rule**: Identity values are **never shown in any user-facing UI surface.**
+> A single defined exception may be declared by the owner and must be explicitly
+> approved and documented here before implementation.
+>
+> **TODO: SECURITY LAYER** — fingerprint verification, tamper detection, and
+> signed identity enforcement to be established as a dedicated security phase.
+
 This file defines the shared UI shell all Tier 2/Tier 3 screens inherit by default.
 It turns "Global UI template" from a concept into a concrete build contract.
 

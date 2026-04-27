@@ -35,6 +35,30 @@
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+/* Larger screens (desktop 1025px+) */
+@media (min-width: 1025px) {
+  :root {
+    --shell-max-width: 1920px;
+    --shell-padding: clamp(8px, 1.8vw, 14px);
+  }
+}
+
+/* iPad Air/Pro (769px - 1024px) */
+@media (max-width: 1024px) {
+  :root {
+    --shell-max-width: 100%;
+    --shell-padding: clamp(12px, 1.5vw, 20px);
+  }
+}
+
+/* Smaller tablets/phones (320px-768px) */
+@media (max-width: 768px) {
+  :root {
+    --shell-max-width: 100%;
+    --shell-padding: 12px;
+  }
+}
+
 :root[data-theme='high-contrast'] {
   --bg: #000;
   --surface: #0a0a0a;
@@ -624,6 +648,10 @@ body {
   display: grid;
   grid-template-columns: 1.8fr 1fr 1fr;
   gap: 8px;
+}
+
+.master-shell .controls {
+  grid-template-columns: minmax(0, 1fr) 350px 290px;
 }
 
 .control {
@@ -2427,4 +2455,94 @@ tbody tr.row-dirty-flash {
     flex-wrap: wrap;
     justify-content: space-between;
   }
+}
+
+/* ─── System Map Modal Overlay ─────────────────────────────────────────────── */
+
+#sysmap-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  /* very light scrim — underlying UI clearly visible */
+  background: rgba(7, 12, 27, 0.38);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  align-items: center;
+  justify-content: center;
+  animation: sysmap-fade-in 0.22s ease;
+}
+
+#sysmap-backdrop.open {
+  display: flex;
+}
+
+@keyframes sysmap-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+#sysmap-modal {
+  position: relative;
+  width: 780px;
+  height: 500px;
+  border-radius: 28px;
+  overflow: hidden;
+  /* layered glow — soft edges that bleed into the page behind */
+  box-shadow:
+    0 0 0 1px rgba(79, 140, 255, 0.18),
+    0 0 40px 12px rgba(79, 140, 255, 0.10),
+    0 0 80px 32px rgba(30, 20, 60, 0.28),
+    0 24px 80px rgba(0, 0, 0, 0.55);
+  animation: sysmap-rise 0.32s cubic-bezier(0.22, 0, 0.18, 1);
+}
+
+@keyframes sysmap-rise {
+  from {
+    transform: translateY(18px) scale(0.97);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+#sysmap-modal iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 28px;
+  display: block;
+}
+
+#sysmap-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 10;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(7, 12, 27, 0.72);
+  color: rgba(220, 230, 255, 0.75);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s, color 0.18s;
+}
+
+#sysmap-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
 }

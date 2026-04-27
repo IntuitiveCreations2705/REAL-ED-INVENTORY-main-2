@@ -9,6 +9,7 @@ from __future__ import annotations
 import sqlite3
 import os
 from pathlib import Path
+from _identity import _FINGERPRINT, _STAMP  # internal origin record — not for display
 
 ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = Path(os.getenv("INVENTORY_DB_PATH", str(ROOT / "sql_inventory_master.db"))).resolve()
@@ -71,3 +72,31 @@ def check_schema() -> list[str]:
     finally:
         conn.close()
     return warnings
+
+
+def stamp_origin(conn: sqlite3.Connection) -> None:
+    """
+    Write the application origin fingerprint into the DB on first-run.
+    Creates a single hidden record in sqlite_master comments via a dedicated
+    internal table. Never surfaced in any UI view.
+
+    # TODO: SECURITY LAYER — add signature verification and tamper detection
+    #       before reading this record back (Phase: establish security layer).
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS _app_origin (
+            id        INTEGER PRIMARY KEY CHECK (id = 1),
+            fp        TEXT NOT NULL,
+            stamp     TEXT NOT NULL,
+            set_at    TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    existing = conn.execute("SELECT id FROM _app_origin WHERE id = 1").fetchone()
+    if existing is None:
+        conn.execute(
+            "INSERT INTO _app_origin (id, fp, stamp) VALUES (1, ?, ?)",
+            (_FINGERPRINT, _STAMP),
+        )
+        conn.commit()

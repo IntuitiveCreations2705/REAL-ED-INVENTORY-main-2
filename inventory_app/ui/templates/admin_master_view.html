@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- origin:ADEANE::ME::IOWNIT::2026 -->
   <title>Admin Master Inventory</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='admin_theme.css') }}" />
 </head>
@@ -39,8 +40,7 @@
           <div class="header-action-group header-action-group--nav">
             <a class="btn secondary btn-link" href="{{ url_for('item_list_page') }}">Item ID List Admin</a>
             <a class="btn secondary btn-link" href="{{ url_for('event_stock_count_page') }}">Event Stock Count</a>
-            <a class="btn secondary btn-link" href="{{ url_for('system_map_page') }}" target="_blank"
-              rel="noreferrer">System Map</a>
+            <button class="btn secondary" id="open-sysmap-btn" type="button">System Map</button>
             <button id="add-row-btn" class="btn">Add Row</button>
             <button id="refresh-btn" class="btn secondary">Refresh</button>
           </div>
@@ -75,17 +75,17 @@
       </header>
 
       <section class="card controls">
-        <div class="control small">
-          <label for="box-filter">Box filter</label>
-          <input id="box-filter" type="text" list="box-filter-options" placeholder="e.g. A-01" />
-        </div>
-
-        <div class="control">
+        <div class="control control-description">
           <label for="search-item">Filter by Description</label>
           <input id="search-item" type="text" placeholder="Type text from description column" />
         </div>
 
-        <div class="control small">
+        <div class="control small control-box">
+          <label for="box-filter">Box filter</label>
+          <input id="box-filter" type="text" list="box-filter-options" placeholder="e.g. A-01" />
+        </div>
+
+        <div class="control small control-location">
           <label for="location-filter">Location filter</label>
           <input id="location-filter" type="text" list="location-filter-options" placeholder="e.g. ZEN ZONE 2" />
         </div>
@@ -227,6 +227,43 @@
   </dialog>
 
   <script type="module" src="{{ url_for('static', filename='admin_master_view.js') }}"></script>
+
+  <!-- System Map modal overlay -->
+  <div id="sysmap-backdrop" role="dialog" aria-modal="true" aria-label="System Layer Map">
+    <div id="sysmap-modal">
+      <button id="sysmap-close" aria-label="Close System Map" title="Close (Esc)">&#x2715;</button>
+      <iframe id="sysmap-frame" src="" title="System Layer Map"></iframe>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const btn = document.getElementById('open-sysmap-btn');
+      const backdrop = document.getElementById('sysmap-backdrop');
+      const frame = document.getElementById('sysmap-frame');
+      const closeBtn = document.getElementById('sysmap-close');
+      const SYSMAP_URL = '{{ url_for("system_map_page") }}';
+
+      function openModal() {
+        if (!frame.src || frame.src === window.location.href) {
+          frame.src = SYSMAP_URL;
+        }
+        backdrop.classList.add('open');
+        closeBtn.focus();
+      }
+      function closeModal() {
+        backdrop.classList.remove('open');
+      }
+
+      btn.addEventListener('click', openModal);
+      closeBtn.addEventListener('click', closeModal);
+      backdrop.addEventListener('click', function (e) {
+        if (e.target === backdrop) closeModal();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && backdrop.classList.contains('open')) closeModal();
+      });
+    })();
+  </script>
 </body>
 
 </html>

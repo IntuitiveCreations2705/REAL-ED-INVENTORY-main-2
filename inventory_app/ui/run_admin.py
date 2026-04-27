@@ -1,5 +1,5 @@
 from app import create_app
-from db import check_schema
+from db import check_schema, get_conn, stamp_origin
 
 warnings = check_schema()
 if warnings:
@@ -7,6 +7,13 @@ if warnings:
     for w in warnings:
         print(f"   • {w}")
     print()
+
+# Stamp origin fingerprint into DB on first-run (internal record — not displayed)
+_conn = get_conn()
+try:
+    stamp_origin(_conn)
+finally:
+    _conn.close()
 
 app = create_app()
 
