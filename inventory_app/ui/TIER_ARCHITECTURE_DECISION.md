@@ -162,6 +162,16 @@ Global inheritance contract reference: [GLOBAL_UI_TEMPLATE.md](GLOBAL_UI_TEMPLAT
 - BOX prefix assignments managed exclusively by MOM-L2.
 - Device-to-prefix mappings immutable until explicitly revoked by MOM-L2.
 
+## Foundation statement gate (implemented)
+- Global foundation source: `/global system statement.txt` (repo root).
+- Tier 1 now enforces a hard validation gate for all mutating endpoints.
+- If the foundation statement file is missing, empty, or mismatched, writes are blocked.
+- Health endpoint now reports foundation validation status for operational visibility.
+- Runtime env controls:
+  - `INVENTORY_REQUIRE_FOUNDATION_VALIDATION` (default: `true`)
+  - `INVENTORY_FOUNDATION_STATEMENT_EXPECTED` (optional override)
+  - `INVENTORY_FOUNDATION_STATEMENT_PATH` (optional override)
+
 ## Phase 2 Roadmap (Implementation Gaps Deferred)
 
 The following items are identified as necessary for full production deployment but are deferred to Phase 2 (Leadership & Team UI provisioning):

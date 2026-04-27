@@ -389,30 +389,12 @@
 </head>
 
 <body>
-
-  <!-- top bar -->
-  <header id="topbar">
-    <h1>System Layer Map</h1>
-    <span class="hint">← scroll → to move through layers</span>
-    <div class="spacer"></div>
-    <span id="active-badge">Foundation</span>
-  </header>
-
-  <!-- left/right arrows -->
-  <div id="arrow-l" class="arrow hidden" onclick="step(-1)">&#8592;</div>
-  <div id="arrow-r" class="arrow" onclick="step(1)">&#8594;</div>
-
-  <!-- glass stack canvas -->
-  <div id="canvas">
-    <div id="glass-stack"></div>
-  </div>
-
-  <!-- bottom dot nav -->
-  <nav id="dot-nav" aria-label="Layer navigation"></nav>
-
-  <!-- progress bar -->
-  <div id="prog">
-    <div id="prog-fill"></div>
+  <div class="wrap">
+    <h1>System 'Map and Information:'</h1>
+    <div id="meta" class="meta">Loading map metadata…</div>
+    <div class="card">
+      <iframe id="map-live" class="frame" title="Live system map" src="/system-map/live"></iframe>
+    </div>
   </div>
 
   <script>
