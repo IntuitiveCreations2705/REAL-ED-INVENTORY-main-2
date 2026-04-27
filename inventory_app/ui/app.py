@@ -5,14 +5,16 @@ import os
 import re
 import sqlite3
 import uuid
+from functools import wraps
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from flask import Flask, jsonify, render_template, request, send_file
 
 from audit import write_audit
 from backup_ops import run_prechange_snapshot, run_startup_daily_snapshot
 from db import DB_PATH, get_conn
+from foundation_policy import evaluate_foundation_policy
 from rules import (
     as_number as _as_number,
     computed_order_stock_qty as _computed_order_stock_qty,
@@ -72,6 +74,27 @@ def api_error(
         body["code"] = code
     body.update(extras)
     return jsonify(body), status
+
+
+def require_foundation_validation(action_name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Hard-gate mutating actions behind the global foundation statement."""
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            result = evaluate_foundation_policy(action_name)
+            if not result.get("ok"):
+                return api_error(
+                    "Foundation validation failed; action blocked.",
+                    503,
+                    code=str(result.get("code") or "foundation_validation_failed"),
+                    foundation=result,
+                )
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 def _changed_by() -> str:
@@ -442,6 +465,7 @@ def create_app() -> Flask:
 
     @app.get("/api/health")
     def health() -> Any:
+        foundation = evaluate_foundation_policy("api.health")
         with get_conn() as conn:
             counts = conn.execute(
                 """
@@ -479,6 +503,7 @@ def create_app() -> Flask:
                 "counts": dict(counts),
                 "foreign_key_violations": len(fk_rows),
                 "fk_violation_rows": violation_details,
+                "foundation_validation": foundation,
             }
         )
 
@@ -676,6 +701,7 @@ def create_app() -> Flask:
         return jsonify([dict(r) for r in rows])
 
     @app.patch("/api/events/<path:event_name>/tags")
+    @require_foundation_validation("api.events.update_tags")
     def update_event_tags(event_name: str) -> Any:
         payload = request.get_json(silent=True) or {}
         raw_tags = payload.get("tags")
@@ -754,6 +780,7 @@ def create_app() -> Flask:
         )
 
     @app.put("/api/ui-rules/acronym-allowlist")
+    @require_foundation_validation("api.ui_rules.update_acronym_allowlist")
     def update_acronym_allowlist() -> Any:
         payload = request.get_json(silent=True) or {}
         tokens = _normalize_allowlist_tokens(payload.get("tokens") or [])
@@ -813,6 +840,7 @@ def create_app() -> Flask:
         )
 
     @app.put("/api/ui-rules/team-admin-notes")
+    @require_foundation_validation("api.ui_rules.update_team_admin_notes")
     def update_team_admin_notes() -> Any:
         payload = request.get_json(silent=True) or {}
         notes = str(payload.get("notes", "") or "")
@@ -858,6 +886,7 @@ def create_app() -> Flask:
         )
 
     @app.post("/api/ui-rules/acronym-allowlist/reset")
+    @require_foundation_validation("api.ui_rules.reset_acronym_allowlist")
     def reset_acronym_allowlist() -> Any:
         prechange = run_prechange_snapshot(
             reason="api.ui_rules.reset_acronym_allowlist",
@@ -899,6 +928,7 @@ def create_app() -> Flask:
         )
 
     @app.post("/api/master")
+    @require_foundation_validation("api.master.insert")
     def insert_master_row() -> Any:
         payload = request.get_json(silent=True) or {}
         fields = {k: v for k, v in payload.items() if k in EDITABLE_FIELDS}
@@ -1036,9 +1066,15 @@ def create_app() -> Flask:
         except sqlite3.IntegrityError as exc:
             return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
 
+        try:
+            ensure_system_map_assets(force=True)
+        except Exception as exc:
+            app.logger.warning("Failed to regenerate system map after master insert: %s", exc)
+
         return jsonify({"row": dict(inserted)}), 201
 
     @app.patch("/api/master/<int:row_id>")
+    @require_foundation_validation("api.master.update")
     def update_master_row(row_id: int) -> Any:
         payload = request.get_json(silent=True) or {}
         client_version = payload.pop("version", None)
@@ -1245,6 +1281,7 @@ def create_app() -> Flask:
         return jsonify({"row": dict(updated), "foreign_key_violations": len(fk_rows)})
 
     @app.post("/api/master/<int:row_id>/toggle-active")
+    @require_foundation_validation("api.master.toggle_active")
     def toggle_active(row_id: int) -> Any:
         prechange = run_prechange_snapshot(
             reason=f"api.master.toggle_active:{row_id}",
@@ -1301,6 +1338,7 @@ def create_app() -> Flask:
         return jsonify(dict(updated))
 
     @app.post("/api/master/<int:row_id>/link-item")
+    @require_foundation_validation("api.master.link_item")
     def link_item(row_id: int) -> Any:
         payload = request.get_json(silent=True) or {}
         item_id = payload.get("item_id")
@@ -1430,6 +1468,7 @@ def create_app() -> Flask:
         return jsonify(hydrated)
 
     @app.post("/api/item-list/upsert")
+    @require_foundation_validation("api.item_list.upsert")
     def upsert_item_id_list() -> Any:
         payload = request.get_json(silent=True) or {}
         original_item_id = (payload.get("original_item_id") or "").strip() or None
@@ -1614,6 +1653,11 @@ def create_app() -> Flask:
         except sqlite3.IntegrityError as exc:
             return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
 
+        try:
+            ensure_system_map_assets(force=True)
+        except Exception as exc:
+            app.logger.warning("Failed to regenerate system map after item_id_list upsert: %s", exc)
+
         return jsonify({"row": row_data})
 
     # ────────────────────────────────────────────────────────────────────────
@@ -1635,6 +1679,7 @@ def create_app() -> Flask:
         return jsonify([dict(r) for r in rows])
 
     @app.post("/api/event-tags")
+    @require_foundation_validation("api.event_tags.create")
     def create_event_tag() -> Any:
         """Create new tag in catalog. Senior admin only."""
         payload = request.get_json(silent=True) or {}
@@ -1699,9 +1744,15 @@ def create_app() -> Flask:
         except sqlite3.IntegrityError as exc:
             return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
 
+        try:
+            ensure_system_map_assets(force=True)
+        except Exception as exc:
+            app.logger.warning("Failed to regenerate system map after event tag create: %s", exc)
+
         return jsonify({"row": dict(row)}), 201
 
     @app.patch("/api/event-tags/<tag_name>")
+    @require_foundation_validation("api.event_tags.update")
     def update_event_tag(tag_name: str) -> Any:
         """Update tag status or description. Senior admin only."""
         tag_name = tag_name.strip().upper()

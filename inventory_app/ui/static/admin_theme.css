@@ -182,7 +182,7 @@ body {
 .master-shell .header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
+  align-items: end;
   column-gap: 16px;
   row-gap: 12px;
 }
@@ -322,7 +322,6 @@ body {
 }
 
 .master-shell .master-event-chooser-row {
-  grid-column: 1 / -1;
   display: flex;
   justify-content: flex-start;
 }

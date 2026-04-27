@@ -17,6 +17,14 @@
           <p>Live DB view with integrity-enforced editing.</p>
           <!-- [ PHASE 2 RESERVED ] Role selector / scope indicator badge will be inserted here -->
           <!-- Use this space for: Tier 2.2 role specialization selector, device/BOX scope display -->
+          <div class="master-event-chooser-row" aria-live="polite">
+            <div class="master-event-chooser-box">
+              <label for="header-event-filter" class="master-event-chooser-label">Event Scope</label>
+              <select id="header-event-filter" class="master-event-select">
+                <option value="">WHICH EVENT AM I HELPING YOU WITH</option>
+              </select>
+            </div>
+          </div>
         </div>
         <div class="master-header-col-right">
           <aside id="event-beacon" class="event-beacon" aria-live="polite">
@@ -27,14 +35,6 @@
           <div id="progress-counter" class="progress-counter"></div>
         </div>
         <div class="header-summary"></div>
-        <div class="master-event-chooser-row" aria-live="polite">
-          <div class="master-event-chooser-box">
-            <label for="header-event-filter" class="master-event-chooser-label">Event Scope</label>
-            <select id="header-event-filter" class="master-event-select">
-              <option value="">WHICH EVENT AM I HELPING YOU WITH</option>
-            </select>
-          </div>
-        </div>
         <div class="header-actions">
           <div class="header-action-group header-action-group--nav">
             <a class="btn secondary btn-link" href="{{ url_for('item_list_page') }}">Item ID List Admin</a>
