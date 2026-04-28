@@ -1,4 +1,4 @@
- """foundation_policy.py — hard validation gate for the global foundation statement.
+"""foundation_policy.py — hard validation gate for the global foundation statement.
 
 This module enforces the repo-level foundation statement before any write/mutation
 operation is allowed to proceed.
