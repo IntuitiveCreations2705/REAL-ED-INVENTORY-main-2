@@ -2266,6 +2266,145 @@ def create_app() -> Flask:
 
         return jsonify({"session": dict(updated), "reason": reason})
 
+    @app.get("/api/activity/session/<session_id>/summary")
+    def activity_session_summary(session_id: str) -> Any:
+        """Return one-session usage summary for active vs inactive time review.
+
+        TODO Phase 2:
+        - Restrict endpoint to authorized manager/admin roles.
+        - Add user-level access scoping rules.
+        """
+        if not session_id.strip():
+            return api_error("session_id is required.", 400, code="session_id_required")
+
+        with get_conn() as conn:
+            _ensure_activity_tracking_tables(conn)
+            session_row = conn.execute(
+                "SELECT * FROM activity_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if session_row is None:
+                return api_error("Session not found.", 404, code="session_not_found", session_id=session_id)
+
+            heartbeat_stats = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS heartbeat_count,
+                    SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active_heartbeat_count,
+                    SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END) AS inactive_heartbeat_count,
+                    MIN(recorded_at) AS first_heartbeat_at,
+                    MAX(recorded_at) AS last_heartbeat_at,
+                    AVG(idle_seconds) AS avg_idle_seconds
+                FROM activity_heartbeat_log
+                WHERE session_id = ?
+                """,
+                (session_id,),
+            ).fetchone()
+
+        session_data = dict(session_row)
+        activity_seconds = int(session_data.get("activity_seconds") or 0)
+        inactive_seconds = int(session_data.get("inactive_seconds") or 0)
+        total_logged_seconds = activity_seconds + inactive_seconds
+        started_at = session_data.get("started_at")
+        ended_or_now = session_data.get("ended_at") or session_data.get("last_seen_at") or _now_iso_utc()
+        elapsed_seconds = _seconds_between(started_at, ended_or_now)
+
+        return jsonify(
+            {
+                "session": session_data,
+                "summary": {
+                    "activity_seconds": activity_seconds,
+                    "inactive_seconds": inactive_seconds,
+                    "total_logged_seconds": total_logged_seconds,
+                    "elapsed_seconds": elapsed_seconds,
+                    "activity_ratio": (activity_seconds / total_logged_seconds) if total_logged_seconds > 0 else None,
+                    "billable_seconds": activity_seconds,
+                    "idle_seconds": inactive_seconds,
+                },
+                "heartbeat": {
+                    "count": int((heartbeat_stats["heartbeat_count"] or 0) if heartbeat_stats else 0),
+                    "active_count": int((heartbeat_stats["active_heartbeat_count"] or 0) if heartbeat_stats else 0),
+                    "inactive_count": int((heartbeat_stats["inactive_heartbeat_count"] or 0) if heartbeat_stats else 0),
+                    "first_at": heartbeat_stats["first_heartbeat_at"] if heartbeat_stats else None,
+                    "last_at": heartbeat_stats["last_heartbeat_at"] if heartbeat_stats else None,
+                    "avg_idle_seconds": float(heartbeat_stats["avg_idle_seconds"] or 0.0) if heartbeat_stats else 0.0,
+                },
+            }
+        )
+
+    @app.get("/api/activity/rollup/daily")
+    def activity_daily_rollup() -> Any:
+        """Daily per-user rollup query for manager review dashboards.
+
+        TODO Phase 2:
+        - Require manager/admin authorization.
+        - Add pagination and export controls.
+        - Add department/team filters once org mapping is wired.
+        """
+        start_date = request.args.get("start_date", "").strip()  # YYYY-MM-DD
+        end_date = request.args.get("end_date", "").strip()      # YYYY-MM-DD
+        user_id = request.args.get("user_id", "").strip()
+
+        where_clauses: list[str] = []
+        params: list[Any] = []
+
+        if start_date:
+            where_clauses.append("date(started_at) >= date(?)")
+            params.append(start_date)
+        if end_date:
+            where_clauses.append("date(started_at) <= date(?)")
+            params.append(end_date)
+        if user_id:
+            where_clauses.append("user_id = ?")
+            params.append(user_id)
+
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        with get_conn() as conn:
+            _ensure_activity_tracking_tables(conn)
+            rows = conn.execute(
+                f"""
+                SELECT
+                    date(started_at) AS work_date,
+                    user_id,
+                    COUNT(*) AS session_count,
+                    SUM(COALESCE(activity_seconds, 0)) AS billable_seconds,
+                    SUM(COALESCE(inactive_seconds, 0)) AS inactive_seconds,
+                    SUM(COALESCE(activity_seconds, 0) + COALESCE(inactive_seconds, 0)) AS total_logged_seconds,
+                    MIN(started_at) AS first_session_at,
+                    MAX(COALESCE(ended_at, last_seen_at, started_at)) AS last_session_at
+                FROM activity_sessions
+                {where_sql}
+                GROUP BY date(started_at), user_id
+                ORDER BY work_date DESC, user_id ASC
+                """,
+                params,
+            ).fetchall()
+
+        rollup: list[dict[str, Any]] = []
+        for row in rows:
+            rec = dict(row)
+            billable_seconds = int(rec.get("billable_seconds") or 0)
+            inactive_seconds = int(rec.get("inactive_seconds") or 0)
+            total_logged_seconds = int(rec.get("total_logged_seconds") or 0)
+            rec["billable_hours"] = round(billable_seconds / 3600, 2)
+            rec["inactive_hours"] = round(inactive_seconds / 3600, 2)
+            rec["total_logged_hours"] = round(total_logged_seconds / 3600, 2)
+            rec["activity_ratio"] = (billable_seconds / total_logged_seconds) if total_logged_seconds > 0 else None
+            rollup.append(rec)
+
+        return jsonify(
+            {
+                "filters": {
+                    "start_date": start_date or None,
+                    "end_date": end_date or None,
+                    "user_id": user_id or None,
+                },
+                "rows": rollup,
+                "row_count": len(rollup),
+            }
+        )
+
     return app
 
 
