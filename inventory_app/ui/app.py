@@ -47,6 +47,9 @@ UI_RULE_KEY_ACRONYM_ALLOWLIST = "acronym_allowlist"
 UI_RULE_KEY_TEAM_ADMIN_NOTES = "team_admin_notes"
 DEFAULT_ACRONYM_ALLOWLIST = ["usb", "xlr", "iec", "rca", "aa", "aaa"]
 DEFAULT_EVENT_THEME_ACCENT = "#4F8CFF"
+DEFAULT_ACTIVITY_IDLE_THRESHOLD_SECONDS = 300
+DEFAULT_ACTIVITY_HEARTBEAT_TIMEOUT_SECONDS = 180
+DEFAULT_ACTIVITY_HEARTBEAT_INTERVAL_SECONDS = 60
 ROUGH_EVENT_THEME_COLORS = {
     "Real Tantra": "#FB0404",
     "Real Coach Program": "#00468C",
@@ -188,6 +191,95 @@ def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
 
 def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
     return {r[1] for r in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+
+
+def _now_iso_utc() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _parse_iso_utc(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    s = value.strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _seconds_between(start_iso: str | None, end_iso: str | None) -> int:
+    start = _parse_iso_utc(start_iso)
+    end = _parse_iso_utc(end_iso)
+    if start is None or end is None:
+        return 0
+    return max(int((end - start).total_seconds()), 0)
+
+
+def _int_or_default(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _activity_idle_threshold_seconds() -> int:
+    return max(_int_or_default(os.getenv("INVENTORY_ACTIVITY_IDLE_THRESHOLD_SECONDS"), DEFAULT_ACTIVITY_IDLE_THRESHOLD_SECONDS), 1)
+
+
+def _activity_heartbeat_timeout_seconds() -> int:
+    return max(_int_or_default(os.getenv("INVENTORY_ACTIVITY_HEARTBEAT_TIMEOUT_SECONDS"), DEFAULT_ACTIVITY_HEARTBEAT_TIMEOUT_SECONDS), 1)
+
+
+def _activity_heartbeat_interval_seconds() -> int:
+    return max(_int_or_default(os.getenv("INVENTORY_ACTIVITY_HEARTBEAT_INTERVAL_SECONDS"), DEFAULT_ACTIVITY_HEARTBEAT_INTERVAL_SECONDS), 1)
+
+
+def _ensure_activity_tracking_tables(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS activity_sessions (
+            session_id       TEXT PRIMARY KEY,
+            user_id          TEXT NOT NULL,
+            started_at       TEXT NOT NULL,
+            ended_at         TEXT,
+            last_seen_at     TEXT,
+            status           TEXT NOT NULL DEFAULT 'active',
+            activity_seconds INTEGER NOT NULL DEFAULT 0,
+            inactive_seconds INTEGER NOT NULL DEFAULT 0,
+            created_by       TEXT,
+            updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            updated_by       TEXT,
+            client_meta_json TEXT,
+            version          INTEGER NOT NULL DEFAULT 1,
+            CHECK (status IN ('active', 'ended', 'timed_out'))
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS activity_heartbeat_log (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id    TEXT NOT NULL,
+            recorded_at   TEXT NOT NULL,
+            is_active     INTEGER NOT NULL CHECK (is_active IN (0,1)),
+            idle_seconds  INTEGER NOT NULL DEFAULT 0,
+            source        TEXT,
+            device_hint   TEXT,
+            metadata_json TEXT,
+            FOREIGN KEY (session_id) REFERENCES activity_sessions(session_id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_activity_heartbeat_session_recorded ON activity_heartbeat_log(session_id, recorded_at)"
+    )
 
 
 def _effective_item_status_from_box(
@@ -439,6 +531,7 @@ def create_app() -> Flask:
         _ensure_item_id_list_lifecycle_columns(cleanup_conn)
         _ensure_event_name_theme_column(cleanup_conn)
         _ensure_ui_rule_settings_table(cleanup_conn)
+        _ensure_activity_tracking_tables(cleanup_conn)
 
     # Ensure generated visual map assets exist for UX/backend introspection.
     system_map_boot_error: str | None = None
@@ -1957,6 +2050,221 @@ def create_app() -> Flask:
 
             rows = conn.execute(sql).fetchall()
         return jsonify([dict(r) for r in rows])
+
+    @app.post("/api/activity/session/start")
+    def start_activity_session() -> Any:
+        payload = request.get_json(silent=True) or {}
+        user_id = str(payload.get("user_id") or "").strip()
+        if not user_id:
+            return api_error("user_id is required.", 400, code="user_id_required")
+
+        session_id = str(payload.get("session_id") or "").strip() or str(uuid.uuid4())
+        now_iso = _now_iso_utc()
+        changed_by = _changed_by()
+
+        client_meta = payload.get("client_meta")
+        client_meta_json = json.dumps(client_meta) if client_meta is not None else None
+
+        with get_conn() as conn:
+            _ensure_activity_tracking_tables(conn)
+            existing = conn.execute(
+                "SELECT session_id, status FROM activity_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if existing is not None:
+                return api_error("session_id already exists.", 409, code="session_exists", session_id=session_id)
+
+            conn.execute(
+                """
+                INSERT INTO activity_sessions
+                    (session_id, user_id, started_at, last_seen_at, status,
+                     created_by, updated_at, updated_by, client_meta_json, version)
+                VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 1)
+                """,
+                (session_id, user_id, now_iso, now_iso, changed_by, now_iso, changed_by, client_meta_json),
+            )
+            row = conn.execute(
+                "SELECT * FROM activity_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+
+            write_audit(
+                conn,
+                table_name="activity_sessions",
+                row_ref=f"session_id={session_id}",
+                action="INSERT",
+                old_value=None,
+                new_value=f"start user_id={user_id}",
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
+
+        return jsonify(
+            {
+                "session": dict(row),
+                "idle_threshold_seconds": _activity_idle_threshold_seconds(),
+                "heartbeat_timeout_seconds": _activity_heartbeat_timeout_seconds(),
+                "recommended_heartbeat_interval_seconds": _activity_heartbeat_interval_seconds(),
+            }
+        ), 201
+
+    @app.post("/api/activity/session/heartbeat")
+    def activity_heartbeat() -> Any:
+        payload = request.get_json(silent=True) or {}
+        session_id = str(payload.get("session_id") or "").strip()
+        if not session_id:
+            return api_error("session_id is required.", 400, code="session_id_required")
+
+        idle_seconds = _int_or_default(payload.get("idle_seconds"), 0)
+        if idle_seconds < 0:
+            return api_error("idle_seconds must be >= 0.", 422, code="invalid_idle_seconds")
+
+        idle_threshold_seconds = _activity_idle_threshold_seconds()
+        heartbeat_timeout_seconds = _activity_heartbeat_timeout_seconds()
+
+        explicit_is_active = payload.get("is_active")
+        if isinstance(explicit_is_active, bool):
+            is_active = explicit_is_active
+        else:
+            is_active = idle_seconds < idle_threshold_seconds
+
+        now_iso = _now_iso_utc()
+        changed_by = _changed_by()
+        source = str(payload.get("source") or "").strip() or None
+        metadata = payload.get("metadata")
+        metadata_json = json.dumps(metadata) if metadata is not None else None
+
+        with get_conn() as conn:
+            _ensure_activity_tracking_tables(conn)
+            session_row = conn.execute(
+                "SELECT * FROM activity_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if session_row is None:
+                return api_error("Session not found.", 404, code="session_not_found", session_id=session_id)
+
+            if session_row["status"] == "ended":
+                return api_error("Session is already ended.", 409, code="session_ended", session_id=session_id)
+
+            conn.execute(
+                """
+                INSERT INTO activity_heartbeat_log
+                    (session_id, recorded_at, is_active, idle_seconds, source, device_hint, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (session_id, now_iso, 1 if is_active else 0, idle_seconds, source, request.remote_addr, metadata_json),
+            )
+
+            previous_seen_iso = session_row["last_seen_at"] or session_row["started_at"]
+            interval_seconds_raw = _seconds_between(previous_seen_iso, now_iso)
+            interval_seconds = min(interval_seconds_raw, heartbeat_timeout_seconds)
+
+            prior_activity_seconds = int(session_row["activity_seconds"] or 0)
+            prior_inactive_seconds = int(session_row["inactive_seconds"] or 0)
+            next_activity_seconds = prior_activity_seconds + (interval_seconds if is_active else 0)
+            next_inactive_seconds = prior_inactive_seconds + (0 if is_active else interval_seconds)
+
+            conn.execute(
+                """
+                UPDATE activity_sessions
+                SET last_seen_at = ?,
+                    status = 'active',
+                    activity_seconds = ?,
+                    inactive_seconds = ?,
+                    updated_at = ?,
+                    updated_by = ?,
+                    version = version + 1
+                WHERE session_id = ?
+                """,
+                (
+                    now_iso,
+                    next_activity_seconds,
+                    next_inactive_seconds,
+                    now_iso,
+                    changed_by,
+                    session_id,
+                ),
+            )
+
+            updated = conn.execute(
+                "SELECT * FROM activity_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+
+            write_audit(
+                conn,
+                table_name="activity_sessions",
+                row_ref=f"session_id={session_id}",
+                action="UPDATE",
+                field_name="heartbeat",
+                old_value=f"activity={prior_activity_seconds},inactive={prior_inactive_seconds}",
+                new_value=f"activity={next_activity_seconds},inactive={next_inactive_seconds},is_active={is_active},idle={idle_seconds}",
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
+
+        return jsonify(
+            {
+                "session": dict(updated),
+                "interval_seconds_applied": interval_seconds,
+                "billable": bool(is_active),
+                "idle_threshold_seconds": idle_threshold_seconds,
+            }
+        )
+
+    @app.post("/api/activity/session/end")
+    def end_activity_session() -> Any:
+        payload = request.get_json(silent=True) or {}
+        session_id = str(payload.get("session_id") or "").strip()
+        if not session_id:
+            return api_error("session_id is required.", 400, code="session_id_required")
+
+        now_iso = _now_iso_utc()
+        changed_by = _changed_by()
+        reason = str(payload.get("reason") or "").strip() or "manual_end"
+
+        with get_conn() as conn:
+            _ensure_activity_tracking_tables(conn)
+            session_row = conn.execute(
+                "SELECT * FROM activity_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if session_row is None:
+                return api_error("Session not found.", 404, code="session_not_found", session_id=session_id)
+            if session_row["status"] == "ended":
+                return api_error("Session is already ended.", 409, code="session_ended", session_id=session_id)
+
+            conn.execute(
+                """
+                UPDATE activity_sessions
+                SET ended_at = ?,
+                    status = 'ended',
+                    updated_at = ?,
+                    updated_by = ?,
+                    version = version + 1
+                WHERE session_id = ?
+                """,
+                (now_iso, now_iso, changed_by, session_id),
+            )
+
+            updated = conn.execute(
+                "SELECT * FROM activity_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+
+            write_audit(
+                conn,
+                table_name="activity_sessions",
+                row_ref=f"session_id={session_id}",
+                action="UPDATE",
+                field_name="status",
+                old_value=session_row["status"],
+                new_value=f"ended:{reason}",
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
+
+        return jsonify({"session": dict(updated), "reason": reason})
 
     return app
 
