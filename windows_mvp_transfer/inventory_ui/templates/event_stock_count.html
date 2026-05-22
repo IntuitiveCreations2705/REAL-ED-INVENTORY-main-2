@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Event Stock Count</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin_theme.css') }}" />
+</head>
+
+<body>
+  <main class="app-shell stock-count-shell">
+    <div class="sticky-tools">
+      <header class="card header stock-count-header">
+        <div class="stock-count-col-left">
+          <div class="stock-count-label-row">
+            <label for="event-filter" class="stock-count-title-label">Select Event</label>
+            <span class="stock-count-ui-title">STOCK COUNT</span>
+          </div>
+          <select id="event-filter" class="stock-count-event-select">
+            <option value="">WHICH EVENT AM I HELPING YOU WITH</option>
+          </select>
+          <div class="header-actions">
+            <a class="btn secondary btn-link" href="{{ url_for('index') }}">Admin Master</a>
+            <button id="refresh-btn" class="btn secondary">Refresh</button>
+          </div>
+        </div>
+
+        <div class="stock-count-col-right">
+          <aside id="event-beacon" class="event-beacon" aria-live="polite">
+            <span class="event-beacon-label">Event Scope</span>
+            <strong id="event-beacon-name"></strong>
+            <span id="event-beacon-meta" class="event-beacon-meta">Select Event to begin stock count.</span>
+          </aside>
+          <div id="progress-counter" class="progress-counter"></div>
+        </div>
+      </header>
+
+      <section class="card controls stock-count-controls">
+        <div class="control">
+          <label for="search-description">DESCRIPTION</label>
+          <input id="search-description" type="text" placeholder="Type text from description column" />
+        </div>
+
+        <div class="control small">
+          <label for="box-filter">BOX NUMBER</label>
+          <input id="box-filter" type="text" list="box-filter-options" placeholder="e.g. A-01" />
+        </div>
+
+        <div class="control small">
+          <label for="location-filter">LOCATION</label>
+          <input id="location-filter" type="text" list="location-filter-options" placeholder="e.g. ZEN ZONE 2" />
+        </div>
+      </section>
+
+      <section class="card notes-container">
+        <div class="team-admin-notes">
+          <h3>Team / Admin Notes</h3>
+          <textarea id="team-admin-notes-input" class="team-admin-notes-input" rows="2" maxlength="200"
+            placeholder="Personnel can add notes here to communicate with the team. Changes are saved automatically."></textarea>
+        </div>
+      </section>
+
+      <!-- [ PHASE 2 RESERVED ] Satellite device scope indicator will be inserted here -->
+      <!-- Use this space for: Device BOX prefix assignment badge, last sync timestamp -->
+    </div>
+
+    <section class="card table-wrap">
+      <table class="stock-count-table">
+        <thead>
+          <tr>
+            <th>BOX</th>
+            <th></th>
+            <th class="col-description"></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th>LOCATION</th>
+          </tr>
+        </thead>
+        <tbody id="rows-body"></tbody>
+      </table>
+    </section>
+
+    <footer id="status-bar" class="status-bar">Ready</footer>
+  </main>
+
+  <datalist id="box-filter-options"></datalist>
+  <datalist id="location-filter-options"></datalist>
+  <script type="module" src="{{ url_for('static', filename='event_stock_count.js') }}"></script>
+</body>
+
+</html>

@@ -22,6 +22,7 @@ const MAX_NOTE_LENGTH = 200;
 const PREVIEW_NOTE_LENGTH = 50;
 const STOCK_EDITABLE_FIELD = 'stock_on_hand';
 const TEAM_ADMIN_NOTES_MAX_LENGTH = 200;
+const SHARED_EVENT_SCOPE_KEY = 'inventory.shared.event';
 
 const els = {
   body: document.getElementById('rows-body'),
@@ -89,6 +90,7 @@ function wireEvents() {
   });
   els.eventFilter.addEventListener('change', () => {
     if (guardDirtyRow('changing filters')) return;
+    persistSharedEventSelection();
     renderStockCountScope();
     applyFilters();
   });
@@ -210,7 +212,7 @@ function setEventChooserWaitingState(isWaiting) {
 
 function populateEventFilter() {
   if (!els.eventFilter) return;
-  const previous = els.eventFilter.value;
+  const previous = sessionStorage.getItem(SHARED_EVENT_SCOPE_KEY) || els.eventFilter.value;
 
   const options = state.events
     .filter((e) => String(e.event_name || '').trim() && e.event_name !== 'All')
@@ -229,6 +231,13 @@ function populateEventFilter() {
   if (previous && state.events.some((e) => e.event_name === previous && e.event_name !== 'All')) {
     els.eventFilter.value = previous;
   }
+
+  persistSharedEventSelection();
+}
+
+function persistSharedEventSelection() {
+  if (!els.eventFilter) return;
+  sessionStorage.setItem(SHARED_EVENT_SCOPE_KEY, els.eventFilter.value || '');
 }
 
 function refreshBoxOptions() {

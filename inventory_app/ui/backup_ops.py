@@ -15,11 +15,40 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
+ENV_FILE = ROOT / ".env"
 DEFAULT_DB_PATH = ROOT / "sql_inventory_master.db"
 DEFAULT_PRIMARY = ROOT / "inventory_app" / "backups"
 DEFAULT_SCRIPT = ROOT / "inventory_app" / "scripts" / "auto_backup.sh"
 STAMP_FILE = DEFAULT_PRIMARY / ".last_prechange_snapshot_ts"
 STARTUP_DAILY_STAMP_FILE = DEFAULT_PRIMARY / ".last_startup_daily_snapshot_date"
+
+
+def _load_env_file() -> None:
+    """Load simple KEY=VALUE pairs from optional project .env.
+
+    Keeps existing process env values authoritative by using setdefault.
+    """
+    if not ENV_FILE.exists():
+        return
+
+    try:
+        lines = ENV_FILE.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return
+
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
+_load_env_file()
 
 
 def _as_bool(value: str | None, default: bool = True) -> bool:

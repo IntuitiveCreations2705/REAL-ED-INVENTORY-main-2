@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Master Inventory</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin_theme.css') }}" />
+</head>
+
+<body>
+  <main class="app-shell master-shell">
+    <div class="sticky-tools">
+      <header class="card header">
+        <div class="header-copy">
+          <h1>Admin Master Inventory</h1>
+          <p>Live DB view with integrity-enforced editing.</p>
+          <!-- [ PHASE 2 RESERVED ] Role selector / scope indicator badge will be inserted here -->
+          <!-- Use this space for: Tier 2.2 role specialization selector, device/BOX scope display -->
+        </div>
+        <div class="master-header-col-right">
+          <aside id="event-beacon" class="event-beacon" aria-live="polite">
+            <span class="event-beacon-label">Event Scope</span>
+            <strong id="event-beacon-name"></strong>
+            <span id="event-beacon-meta" class="event-beacon-meta">Select Event to begin stock count.</span>
+          </aside>
+          <div id="progress-counter" class="progress-counter"></div>
+        </div>
+        <div class="header-summary"></div>
+        <div class="master-event-chooser-row" aria-live="polite">
+          <div class="master-event-chooser-box">
+            <label for="header-event-filter" class="master-event-chooser-label">Event Scope</label>
+            <select id="header-event-filter" class="master-event-select">
+              <option value="">WHICH EVENT AM I HELPING YOU WITH</option>
+            </select>
+          </div>
+        </div>
+        <div class="header-actions">
+          <div class="header-action-group header-action-group--nav">
+            <a class="btn secondary btn-link" href="{{ url_for('item_list_page') }}">Item ID List Admin</a>
+            <a class="btn secondary btn-link" href="{{ url_for('event_stock_count_page') }}">Event Stock Count</a>
+            <a class="btn secondary btn-link" href="{{ url_for('system_map_page') }}" target="_blank"
+              rel="noreferrer">System Map</a>
+            <button id="add-row-btn" class="btn">Add Row</button>
+            <button id="refresh-btn" class="btn secondary">Refresh</button>
+          </div>
+          <div class="header-action-group header-action-group--placeholder">
+            <div class="header-action-control">
+              <label for="event-filter" class="header-action-label">Event</label>
+              <select id="event-filter" class="header-action-select header-action-select--event">
+                <option value="">EVERYTHING</option>
+              </select>
+            </div>
+          </div>
+          <div class="header-action-group header-action-group--controls">
+            <div class="header-action-control">
+              <label for="view-mode" class="header-action-label">View</label>
+              <select id="view-mode" class="header-action-select">
+                <option value="all" selected>All</option>
+                <option value="unlinked">Unlinked</option>
+                <option value="linked">Linked only</option>
+                <option value="active">Active only</option>
+                <option value="inactive">Inactive only</option>
+              </select>
+            </div>
+            <div class="header-action-control">
+              <label for="event-tags-editor" class="header-action-label">Event Tags</label>
+              <div class="header-action-tags-row">
+                <input id="event-tags-editor" type="text" placeholder="|NEEDED||RCP|"
+                  class="header-action-tags-input" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section class="card controls">
+        <div class="control small">
+          <label for="box-filter">Box filter</label>
+          <input id="box-filter" type="text" list="box-filter-options" placeholder="e.g. A-01" />
+        </div>
+
+        <div class="control">
+          <label for="search-item">Filter by Description</label>
+          <input id="search-item" type="text" placeholder="Type text from description column" />
+        </div>
+
+        <div class="control small">
+          <label for="location-filter">Location filter</label>
+          <input id="location-filter" type="text" list="location-filter-options" placeholder="e.g. ZEN ZONE 2" />
+        </div>
+
+        <!-- [ PHASE 2 RESERVED ] Conflict warning panel will be inserted here -->
+        <!-- Use this space for: Satellite sync conflict indicators, device edit overlap warnings -->
+      </section>
+
+      <section id="box-filter-card" class="card box-filter-summary-card is-hidden" aria-live="polite">
+        <div class="box-filter-summary-head">
+          <h3 id="box-filter-title">Box</h3>
+          <p id="box-filter-subtitle">Filter by Box to pin details here.</p>
+        </div>
+        <div class="box-filter-summary-grid">
+          <div><span class="meta-label">Box ID</span><strong id="box-filter-detail-id">—</strong></div>
+          <div><span class="meta-label">Rows (box)</span><strong id="box-filter-detail-rows">0</strong></div>
+          <div><span class="meta-label">Rows (visible)</span><strong id="box-filter-detail-visible">0</strong></div>
+          <div><span class="meta-label">Linked</span><strong id="box-filter-detail-linked">0</strong></div>
+          <div><span class="meta-label">Locations</span><strong id="box-filter-detail-locations">—</strong></div>
+        </div>
+      </section>
+
+      <section class="card case-rules-panel" aria-labelledby="case-rules-title">
+        <details>
+          <summary>
+            <span id="case-rules-title">Text Rules - Upper/Lower Case Preset Rules</span>
+            <span class="case-rules-summary">Quick guide for save formatting</span>
+          </summary>
+          <div class="case-rules-content">
+            <ul>
+              <li><strong>Description / Notes / Restock:</strong> Title Case on save; joiner words stay lowercase after
+                the first word.</li>
+              <li><strong>CAPS prompt:</strong> if any ALL-CAPS words are found in those text fields, save asks once
+                whether to keep them uppercase.</li>
+              <li><strong>Box:</strong> Title Case letters and numbers only, for example <em>Zen Zone 2</em>.</li>
+              <li><strong>Location:</strong> forced to full UPPER CASE, for example <em>ZEN ZONE 2</em>.</li>
+              <li><strong>Event Tags:</strong> MUST be Typed and stored as uppercase pipe tags like
+                <em>|NEEDED||PIPES|</em>.
+              </li>
+              <li><strong>Measurements:</strong> matched units are normalized on save, for example <em>25 m</em> becomes
+                <em>25m</em>.
+              </li>
+            </ul>
+
+            <div class="case-allowlist-admin">
+              <label for="case-allowlist-input">Admin Acronym Allow List (always UPPERCASE)</label>
+              <div class="case-allowlist-row">
+                <input id="case-allowlist-input" type="text" placeholder="e.g. USB, XLR, IEC, RCA, AA, AAA" />
+                <button id="case-allowlist-save-btn" class="btn" type="button">Save List</button>
+                <button id="case-allowlist-reset-btn" class="btn secondary" type="button">Reset</button>
+              </div>
+              <p class="case-allowlist-help">
+                Comma-separated tokens. Typos can be corrected and re-saved anytime.
+              </p>
+            </div>
+          </div>
+        </details>
+      </section>
+    </div>
+
+    <section class="card table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Row ID</th>
+            <th>State</th>
+            <th>Link</th>
+            <th>Item ID</th>
+            <th>Item Name</th>
+            <th>Box</th>
+            <th>Location</th>
+            <th>Event Tags</th>
+            <th class="col-description">Description</th>
+            <th>Qty Req</th>
+            <th>Stock</th>
+            <th>Qty Flag Limit</th>
+            <th>Order Stock Qty</th>
+            <th>Notes</th>
+            <th>Restock Comments</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="rows-body"></tbody>
+      </table>
+    </section>
+
+    <footer id="status-bar" class="status-bar">Ready</footer>
+  </main>
+
+  <template id="row-template">
+    <tr>
+      <td class="mono row-id"></td>
+      <td><button class="state-toggle"></button></td>
+      <td class="link-status"></td>
+      <td><input data-field="item_id" type="text" class="mono" /></td>
+      <td class="cell-item-name" style="position: relative;">
+        <input data-field="item_name" type="text" placeholder="Type to search..." />
+        <div class="hover-card"></div>
+        <div class="row-suggestions"></div>
+      </td>
+      <td><input data-field="box_number" type="text" list="box-options" /></td>
+      <td><input data-field="storage_location" type="text" list="location-options" /></td>
+      <td><input data-field="event_tags" type="text" list="event-tag-options" /></td>
+      <td class="cell-description" style="position: relative;">
+        <input data-field="description" type="text" />
+        <div class="hover-card"></div>
+      </td>
+      <td><input data-field="qty_required" type="number" step="1" min="0" /></td>
+      <td><input data-field="stock_on_hand" type="number" step="1" min="0" /></td>
+      <td><input data-field="qty_flag_limit" type="number" step="0.1" min="0" placeholder="e.g. 0.6" /></td>
+      <td><input data-field="order_stock_qty" type="number" step="1" min="0" /></td>
+      <td style="position: relative;">
+        <input data-field="crew_notes" type="text" />
+        <div class="hover-card"></div>
+      </td>
+      <td style="position: relative;">
+        <input data-field="restock_comments" type="text" />
+        <div class="hover-card"></div>
+      </td>
+      <td><button class="btn save-btn">Save</button></td>
+    </tr>
+  </template>
+
+  <datalist id="box-options"></datalist>
+  <datalist id="box-filter-options"></datalist>
+  <datalist id="location-options"></datalist>
+  <datalist id="location-filter-options"></datalist>
+  <datalist id="event-tag-options"></datalist>
+
+  <dialog id="caps-dialog" class="caps-dialog">
+    <form method="dialog" class="caps-dialog-form">
+      <h3>Require Caps Words?</h3>
+      <p>Description contains ALL CAPS word(s). Keep those words in CAPS?</p>
+      <div class="caps-actions">
+        <button type="button" id="caps-yes-btn" class="btn">Yes</button>
+        <button type="button" id="caps-no-btn" class="btn secondary">No</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="{{ url_for('static', filename='admin_master_view.js') }}"></script>
+</body>
+
+</html>

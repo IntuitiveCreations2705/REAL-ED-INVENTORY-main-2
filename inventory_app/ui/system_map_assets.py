@@ -164,13 +164,17 @@ def _write_manifest(source_hash: str) -> dict[str, Any]:
     return payload
 
 
-def ensure_system_map_assets() -> dict[str, Any]:
-    """Ensure the system map PNG + manifest exist and match SYSTEM_MAP.md hash."""
+def ensure_system_map_assets(*, force: bool = False) -> dict[str, Any]:
+    """Ensure the system map PNG + manifest exist and match SYSTEM_MAP.md hash.
+
+    Args:
+        force: When True, regenerate PNG + manifest even when source hash is unchanged.
+    """
     if not SOURCE_FILE.exists():
         raise FileNotFoundError(f"Missing source map file: {SOURCE_FILE}")
 
     source_hash = _sha256(SOURCE_FILE)
-    regenerate = not PNG_FILE.exists() or not MANIFEST_FILE.exists()
+    regenerate = force or not PNG_FILE.exists() or not MANIFEST_FILE.exists()
     manifest: dict[str, Any] = {}
 
     if MANIFEST_FILE.exists():

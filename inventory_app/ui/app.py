@@ -5,14 +5,16 @@ import os
 import re
 import sqlite3
 import uuid
+from functools import wraps
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from flask import Flask, jsonify, render_template, request, send_file
 
 from audit import write_audit
 from backup_ops import run_prechange_snapshot, run_startup_daily_snapshot
 from db import DB_PATH, get_conn
+from foundation_policy import evaluate_foundation_policy
 from rules import (
     as_number as _as_number,
     computed_order_stock_qty as _computed_order_stock_qty,
@@ -45,6 +47,9 @@ UI_RULE_KEY_ACRONYM_ALLOWLIST = "acronym_allowlist"
 UI_RULE_KEY_TEAM_ADMIN_NOTES = "team_admin_notes"
 DEFAULT_ACRONYM_ALLOWLIST = ["usb", "xlr", "iec", "rca", "aa", "aaa"]
 DEFAULT_EVENT_THEME_ACCENT = "#4F8CFF"
+DEFAULT_ACTIVITY_IDLE_THRESHOLD_SECONDS = 300
+DEFAULT_ACTIVITY_HEARTBEAT_TIMEOUT_SECONDS = 180
+DEFAULT_ACTIVITY_HEARTBEAT_INTERVAL_SECONDS = 60
 ROUGH_EVENT_THEME_COLORS = {
     "Real Tantra": "#FB0404",
     "Real Coach Program": "#00468C",
@@ -72,6 +77,27 @@ def api_error(
         body["code"] = code
     body.update(extras)
     return jsonify(body), status
+
+
+def require_foundation_validation(action_name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Hard-gate mutating actions behind the global foundation statement."""
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            result = evaluate_foundation_policy(action_name)
+            if not result.get("ok"):
+                return api_error(
+                    "Foundation validation failed; action blocked.",
+                    503,
+                    code=str(result.get("code") or "foundation_validation_failed"),
+                    foundation=result,
+                )
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 def _changed_by() -> str:
@@ -165,6 +191,95 @@ def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
 
 def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
     return {r[1] for r in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+
+
+def _now_iso_utc() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _parse_iso_utc(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    s = value.strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _seconds_between(start_iso: str | None, end_iso: str | None) -> int:
+    start = _parse_iso_utc(start_iso)
+    end = _parse_iso_utc(end_iso)
+    if start is None or end is None:
+        return 0
+    return max(int((end - start).total_seconds()), 0)
+
+
+def _int_or_default(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _activity_idle_threshold_seconds() -> int:
+    return max(_int_or_default(os.getenv("INVENTORY_ACTIVITY_IDLE_THRESHOLD_SECONDS"), DEFAULT_ACTIVITY_IDLE_THRESHOLD_SECONDS), 1)
+
+
+def _activity_heartbeat_timeout_seconds() -> int:
+    return max(_int_or_default(os.getenv("INVENTORY_ACTIVITY_HEARTBEAT_TIMEOUT_SECONDS"), DEFAULT_ACTIVITY_HEARTBEAT_TIMEOUT_SECONDS), 1)
+
+
+def _activity_heartbeat_interval_seconds() -> int:
+    return max(_int_or_default(os.getenv("INVENTORY_ACTIVITY_HEARTBEAT_INTERVAL_SECONDS"), DEFAULT_ACTIVITY_HEARTBEAT_INTERVAL_SECONDS), 1)
+
+
+def _ensure_activity_tracking_tables(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS activity_sessions (
+            session_id       TEXT PRIMARY KEY,
+            user_id          TEXT NOT NULL,
+            started_at       TEXT NOT NULL,
+            ended_at         TEXT,
+            last_seen_at     TEXT,
+            status           TEXT NOT NULL DEFAULT 'active',
+            activity_seconds INTEGER NOT NULL DEFAULT 0,
+            inactive_seconds INTEGER NOT NULL DEFAULT 0,
+            created_by       TEXT,
+            updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            updated_by       TEXT,
+            client_meta_json TEXT,
+            version          INTEGER NOT NULL DEFAULT 1,
+            CHECK (status IN ('active', 'ended', 'timed_out'))
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS activity_heartbeat_log (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id    TEXT NOT NULL,
+            recorded_at   TEXT NOT NULL,
+            is_active     INTEGER NOT NULL CHECK (is_active IN (0,1)),
+            idle_seconds  INTEGER NOT NULL DEFAULT 0,
+            source        TEXT,
+            device_hint   TEXT,
+            metadata_json TEXT,
+            FOREIGN KEY (session_id) REFERENCES activity_sessions(session_id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_activity_heartbeat_session_recorded ON activity_heartbeat_log(session_id, recorded_at)"
+    )
 
 
 def _effective_item_status_from_box(
@@ -416,6 +531,7 @@ def create_app() -> Flask:
         _ensure_item_id_list_lifecycle_columns(cleanup_conn)
         _ensure_event_name_theme_column(cleanup_conn)
         _ensure_ui_rule_settings_table(cleanup_conn)
+        _ensure_activity_tracking_tables(cleanup_conn)
 
     # Ensure generated visual map assets exist for UX/backend introspection.
     system_map_boot_error: str | None = None
@@ -442,6 +558,7 @@ def create_app() -> Flask:
 
     @app.get("/api/health")
     def health() -> Any:
+        foundation = evaluate_foundation_policy("api.health")
         with get_conn() as conn:
             counts = conn.execute(
                 """
@@ -479,6 +596,7 @@ def create_app() -> Flask:
                 "counts": dict(counts),
                 "foreign_key_violations": len(fk_rows),
                 "fk_violation_rows": violation_details,
+                "foundation_validation": foundation,
             }
         )
 
@@ -516,6 +634,41 @@ def create_app() -> Flask:
     @app.get("/system-map/source")
     def system_map_source() -> Any:
         return send_file(SOURCE_FILE, mimetype="text/markdown")
+
+    @app.get("/api/tier-layer-status")
+    def tier_layer_status() -> Any:
+        """
+        Return per-tier device/role activity for the layered system map view.
+        Phase 1: queries users table for role counts. Named-person mapping is a
+        future phase — slots are reserved in the response shape now.
+        """
+        TIER_ROLE_MAP: dict[str, list[str]] = {
+            "mom_l2": ["superadmin"],
+            "mom_l1": ["superadmin", "admin"],
+            "tier1":  [],  # service layer — no human roles assigned
+            "tier2_1": ["admin"],
+            "tier2_2": ["leadership"],
+            "tier3":  ["operator", "viewer"],
+        }
+        try:
+            with get_conn() as conn:
+                rows = conn.execute(
+                    "SELECT role, COUNT(*) as cnt FROM users WHERE is_active = 1 GROUP BY role"
+                ).fetchall()
+                active_by_role: dict[str, int] = {r["role"]: r["cnt"] for r in rows}
+        except Exception:
+            active_by_role = {}
+
+        result: dict[str, Any] = {}
+        for tier_key, roles in TIER_ROLE_MAP.items():
+            total = sum(active_by_role.get(r, 0) for r in roles)
+            result[tier_key] = {
+                "roles": roles,
+                "active_count": total,
+                # Named people populated in future phase
+                "members": [],
+            }
+        return jsonify({"status": "ok", "tiers": result})
 
     @app.get("/api/suggest")
     def suggest() -> Any:
@@ -676,6 +829,7 @@ def create_app() -> Flask:
         return jsonify([dict(r) for r in rows])
 
     @app.patch("/api/events/<path:event_name>/tags")
+    @require_foundation_validation("api.events.update_tags")
     def update_event_tags(event_name: str) -> Any:
         payload = request.get_json(silent=True) or {}
         raw_tags = payload.get("tags")
@@ -754,6 +908,7 @@ def create_app() -> Flask:
         )
 
     @app.put("/api/ui-rules/acronym-allowlist")
+    @require_foundation_validation("api.ui_rules.update_acronym_allowlist")
     def update_acronym_allowlist() -> Any:
         payload = request.get_json(silent=True) or {}
         tokens = _normalize_allowlist_tokens(payload.get("tokens") or [])
@@ -813,6 +968,7 @@ def create_app() -> Flask:
         )
 
     @app.put("/api/ui-rules/team-admin-notes")
+    @require_foundation_validation("api.ui_rules.update_team_admin_notes")
     def update_team_admin_notes() -> Any:
         payload = request.get_json(silent=True) or {}
         notes = str(payload.get("notes", "") or "")
@@ -858,6 +1014,7 @@ def create_app() -> Flask:
         )
 
     @app.post("/api/ui-rules/acronym-allowlist/reset")
+    @require_foundation_validation("api.ui_rules.reset_acronym_allowlist")
     def reset_acronym_allowlist() -> Any:
         prechange = run_prechange_snapshot(
             reason="api.ui_rules.reset_acronym_allowlist",
@@ -899,6 +1056,7 @@ def create_app() -> Flask:
         )
 
     @app.post("/api/master")
+    @require_foundation_validation("api.master.insert")
     def insert_master_row() -> Any:
         payload = request.get_json(silent=True) or {}
         fields = {k: v for k, v in payload.items() if k in EDITABLE_FIELDS}
@@ -1036,9 +1194,15 @@ def create_app() -> Flask:
         except sqlite3.IntegrityError as exc:
             return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
 
+        try:
+            ensure_system_map_assets(force=True)
+        except Exception as exc:
+            app.logger.warning("Failed to regenerate system map after master insert: %s", exc)
+
         return jsonify({"row": dict(inserted)}), 201
 
     @app.patch("/api/master/<int:row_id>")
+    @require_foundation_validation("api.master.update")
     def update_master_row(row_id: int) -> Any:
         payload = request.get_json(silent=True) or {}
         client_version = payload.pop("version", None)
@@ -1245,6 +1409,7 @@ def create_app() -> Flask:
         return jsonify({"row": dict(updated), "foreign_key_violations": len(fk_rows)})
 
     @app.post("/api/master/<int:row_id>/toggle-active")
+    @require_foundation_validation("api.master.toggle_active")
     def toggle_active(row_id: int) -> Any:
         prechange = run_prechange_snapshot(
             reason=f"api.master.toggle_active:{row_id}",
@@ -1301,6 +1466,7 @@ def create_app() -> Flask:
         return jsonify(dict(updated))
 
     @app.post("/api/master/<int:row_id>/link-item")
+    @require_foundation_validation("api.master.link_item")
     def link_item(row_id: int) -> Any:
         payload = request.get_json(silent=True) or {}
         item_id = payload.get("item_id")
@@ -1430,6 +1596,7 @@ def create_app() -> Flask:
         return jsonify(hydrated)
 
     @app.post("/api/item-list/upsert")
+    @require_foundation_validation("api.item_list.upsert")
     def upsert_item_id_list() -> Any:
         payload = request.get_json(silent=True) or {}
         original_item_id = (payload.get("original_item_id") or "").strip() or None
@@ -1614,6 +1781,11 @@ def create_app() -> Flask:
         except sqlite3.IntegrityError as exc:
             return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
 
+        try:
+            ensure_system_map_assets(force=True)
+        except Exception as exc:
+            app.logger.warning("Failed to regenerate system map after item_id_list upsert: %s", exc)
+
         return jsonify({"row": row_data})
 
     # ────────────────────────────────────────────────────────────────────────
@@ -1635,6 +1807,7 @@ def create_app() -> Flask:
         return jsonify([dict(r) for r in rows])
 
     @app.post("/api/event-tags")
+    @require_foundation_validation("api.event_tags.create")
     def create_event_tag() -> Any:
         """Create new tag in catalog. Senior admin only."""
         payload = request.get_json(silent=True) or {}
@@ -1699,9 +1872,15 @@ def create_app() -> Flask:
         except sqlite3.IntegrityError as exc:
             return api_error(f"Integrity error: {exc}", 409, code="integrity_error")
 
+        try:
+            ensure_system_map_assets(force=True)
+        except Exception as exc:
+            app.logger.warning("Failed to regenerate system map after event tag create: %s", exc)
+
         return jsonify({"row": dict(row)}), 201
 
     @app.patch("/api/event-tags/<tag_name>")
+    @require_foundation_validation("api.event_tags.update")
     def update_event_tag(tag_name: str) -> Any:
         """Update tag status or description. Senior admin only."""
         tag_name = tag_name.strip().upper()
@@ -1871,6 +2050,360 @@ def create_app() -> Flask:
 
             rows = conn.execute(sql).fetchall()
         return jsonify([dict(r) for r in rows])
+
+    @app.post("/api/activity/session/start")
+    def start_activity_session() -> Any:
+        payload = request.get_json(silent=True) or {}
+        user_id = str(payload.get("user_id") or "").strip()
+        if not user_id:
+            return api_error("user_id is required.", 400, code="user_id_required")
+
+        session_id = str(payload.get("session_id") or "").strip() or str(uuid.uuid4())
+        now_iso = _now_iso_utc()
+        changed_by = _changed_by()
+
+        client_meta = payload.get("client_meta")
+        client_meta_json = json.dumps(client_meta) if client_meta is not None else None
+
+        with get_conn() as conn:
+            _ensure_activity_tracking_tables(conn)
+            existing = conn.execute(
+                "SELECT session_id, status FROM activity_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if existing is not None:
+                return api_error("session_id already exists.", 409, code="session_exists", session_id=session_id)
+
+            conn.execute(
+                """
+                INSERT INTO activity_sessions
+                    (session_id, user_id, started_at, last_seen_at, status,
+                     created_by, updated_at, updated_by, client_meta_json, version)
+                VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 1)
+                """,
+                (session_id, user_id, now_iso, now_iso, changed_by, now_iso, changed_by, client_meta_json),
+            )
+            row = conn.execute(
+                "SELECT * FROM activity_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+
+            write_audit(
+                conn,
+                table_name="activity_sessions",
+                row_ref=f"session_id={session_id}",
+                action="INSERT",
+                old_value=None,
+                new_value=f"start user_id={user_id}",
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
+
+        return jsonify(
+            {
+                "session": dict(row),
+                "idle_threshold_seconds": _activity_idle_threshold_seconds(),
+                "heartbeat_timeout_seconds": _activity_heartbeat_timeout_seconds(),
+                "recommended_heartbeat_interval_seconds": _activity_heartbeat_interval_seconds(),
+            }
+        ), 201
+
+    @app.post("/api/activity/session/heartbeat")
+    def activity_heartbeat() -> Any:
+        payload = request.get_json(silent=True) or {}
+        session_id = str(payload.get("session_id") or "").strip()
+        if not session_id:
+            return api_error("session_id is required.", 400, code="session_id_required")
+
+        idle_seconds = _int_or_default(payload.get("idle_seconds"), 0)
+        if idle_seconds < 0:
+            return api_error("idle_seconds must be >= 0.", 422, code="invalid_idle_seconds")
+
+        idle_threshold_seconds = _activity_idle_threshold_seconds()
+        heartbeat_timeout_seconds = _activity_heartbeat_timeout_seconds()
+
+        explicit_is_active = payload.get("is_active")
+        if isinstance(explicit_is_active, bool):
+            is_active = explicit_is_active
+        else:
+            is_active = idle_seconds < idle_threshold_seconds
+
+        now_iso = _now_iso_utc()
+        changed_by = _changed_by()
+        source = str(payload.get("source") or "").strip() or None
+        metadata = payload.get("metadata")
+        metadata_json = json.dumps(metadata) if metadata is not None else None
+
+        with get_conn() as conn:
+            _ensure_activity_tracking_tables(conn)
+            session_row = conn.execute(
+                "SELECT * FROM activity_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if session_row is None:
+                return api_error("Session not found.", 404, code="session_not_found", session_id=session_id)
+
+            if session_row["status"] == "ended":
+                return api_error("Session is already ended.", 409, code="session_ended", session_id=session_id)
+
+            conn.execute(
+                """
+                INSERT INTO activity_heartbeat_log
+                    (session_id, recorded_at, is_active, idle_seconds, source, device_hint, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (session_id, now_iso, 1 if is_active else 0, idle_seconds, source, request.remote_addr, metadata_json),
+            )
+
+            previous_seen_iso = session_row["last_seen_at"] or session_row["started_at"]
+            interval_seconds_raw = _seconds_between(previous_seen_iso, now_iso)
+            interval_seconds = min(interval_seconds_raw, heartbeat_timeout_seconds)
+
+            prior_activity_seconds = int(session_row["activity_seconds"] or 0)
+            prior_inactive_seconds = int(session_row["inactive_seconds"] or 0)
+            next_activity_seconds = prior_activity_seconds + (interval_seconds if is_active else 0)
+            next_inactive_seconds = prior_inactive_seconds + (0 if is_active else interval_seconds)
+
+            conn.execute(
+                """
+                UPDATE activity_sessions
+                SET last_seen_at = ?,
+                    status = 'active',
+                    activity_seconds = ?,
+                    inactive_seconds = ?,
+                    updated_at = ?,
+                    updated_by = ?,
+                    version = version + 1
+                WHERE session_id = ?
+                """,
+                (
+                    now_iso,
+                    next_activity_seconds,
+                    next_inactive_seconds,
+                    now_iso,
+                    changed_by,
+                    session_id,
+                ),
+            )
+
+            updated = conn.execute(
+                "SELECT * FROM activity_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+
+            write_audit(
+                conn,
+                table_name="activity_sessions",
+                row_ref=f"session_id={session_id}",
+                action="UPDATE",
+                field_name="heartbeat",
+                old_value=f"activity={prior_activity_seconds},inactive={prior_inactive_seconds}",
+                new_value=f"activity={next_activity_seconds},inactive={next_inactive_seconds},is_active={is_active},idle={idle_seconds}",
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
+
+        return jsonify(
+            {
+                "session": dict(updated),
+                "interval_seconds_applied": interval_seconds,
+                "billable": bool(is_active),
+                "idle_threshold_seconds": idle_threshold_seconds,
+            }
+        )
+
+    @app.post("/api/activity/session/end")
+    def end_activity_session() -> Any:
+        payload = request.get_json(silent=True) or {}
+        session_id = str(payload.get("session_id") or "").strip()
+        if not session_id:
+            return api_error("session_id is required.", 400, code="session_id_required")
+
+        now_iso = _now_iso_utc()
+        changed_by = _changed_by()
+        reason = str(payload.get("reason") or "").strip() or "manual_end"
+
+        with get_conn() as conn:
+            _ensure_activity_tracking_tables(conn)
+            session_row = conn.execute(
+                "SELECT * FROM activity_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if session_row is None:
+                return api_error("Session not found.", 404, code="session_not_found", session_id=session_id)
+            if session_row["status"] == "ended":
+                return api_error("Session is already ended.", 409, code="session_ended", session_id=session_id)
+
+            conn.execute(
+                """
+                UPDATE activity_sessions
+                SET ended_at = ?,
+                    status = 'ended',
+                    updated_at = ?,
+                    updated_by = ?,
+                    version = version + 1
+                WHERE session_id = ?
+                """,
+                (now_iso, now_iso, changed_by, session_id),
+            )
+
+            updated = conn.execute(
+                "SELECT * FROM activity_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+
+            write_audit(
+                conn,
+                table_name="activity_sessions",
+                row_ref=f"session_id={session_id}",
+                action="UPDATE",
+                field_name="status",
+                old_value=session_row["status"],
+                new_value=f"ended:{reason}",
+                changed_by=changed_by,
+                device_hint=request.remote_addr,
+            )
+
+        return jsonify({"session": dict(updated), "reason": reason})
+
+    @app.get("/api/activity/session/<session_id>/summary")
+    def activity_session_summary(session_id: str) -> Any:
+        """Return one-session usage summary for active vs inactive time review.
+
+        TODO Phase 2:
+        - Restrict endpoint to authorized manager/admin roles.
+        - Add user-level access scoping rules.
+        """
+        if not session_id.strip():
+            return api_error("session_id is required.", 400, code="session_id_required")
+
+        with get_conn() as conn:
+            _ensure_activity_tracking_tables(conn)
+            session_row = conn.execute(
+                "SELECT * FROM activity_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if session_row is None:
+                return api_error("Session not found.", 404, code="session_not_found", session_id=session_id)
+
+            heartbeat_stats = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS heartbeat_count,
+                    SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active_heartbeat_count,
+                    SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END) AS inactive_heartbeat_count,
+                    MIN(recorded_at) AS first_heartbeat_at,
+                    MAX(recorded_at) AS last_heartbeat_at,
+                    AVG(idle_seconds) AS avg_idle_seconds
+                FROM activity_heartbeat_log
+                WHERE session_id = ?
+                """,
+                (session_id,),
+            ).fetchone()
+
+        session_data = dict(session_row)
+        activity_seconds = int(session_data.get("activity_seconds") or 0)
+        inactive_seconds = int(session_data.get("inactive_seconds") or 0)
+        total_logged_seconds = activity_seconds + inactive_seconds
+        started_at = session_data.get("started_at")
+        ended_or_now = session_data.get("ended_at") or session_data.get("last_seen_at") or _now_iso_utc()
+        elapsed_seconds = _seconds_between(started_at, ended_or_now)
+
+        return jsonify(
+            {
+                "session": session_data,
+                "summary": {
+                    "activity_seconds": activity_seconds,
+                    "inactive_seconds": inactive_seconds,
+                    "total_logged_seconds": total_logged_seconds,
+                    "elapsed_seconds": elapsed_seconds,
+                    "activity_ratio": (activity_seconds / total_logged_seconds) if total_logged_seconds > 0 else None,
+                    "billable_seconds": activity_seconds,
+                    "idle_seconds": inactive_seconds,
+                },
+                "heartbeat": {
+                    "count": int((heartbeat_stats["heartbeat_count"] or 0) if heartbeat_stats else 0),
+                    "active_count": int((heartbeat_stats["active_heartbeat_count"] or 0) if heartbeat_stats else 0),
+                    "inactive_count": int((heartbeat_stats["inactive_heartbeat_count"] or 0) if heartbeat_stats else 0),
+                    "first_at": heartbeat_stats["first_heartbeat_at"] if heartbeat_stats else None,
+                    "last_at": heartbeat_stats["last_heartbeat_at"] if heartbeat_stats else None,
+                    "avg_idle_seconds": float(heartbeat_stats["avg_idle_seconds"] or 0.0) if heartbeat_stats else 0.0,
+                },
+            }
+        )
+
+    @app.get("/api/activity/rollup/daily")
+    def activity_daily_rollup() -> Any:
+        """Daily per-user rollup query for manager review dashboards.
+
+        TODO Phase 2:
+        - Require manager/admin authorization.
+        - Add pagination and export controls.
+        - Add department/team filters once org mapping is wired.
+        """
+        start_date = request.args.get("start_date", "").strip()  # YYYY-MM-DD
+        end_date = request.args.get("end_date", "").strip()      # YYYY-MM-DD
+        user_id = request.args.get("user_id", "").strip()
+
+        where_clauses: list[str] = []
+        params: list[Any] = []
+
+        if start_date:
+            where_clauses.append("date(started_at) >= date(?)")
+            params.append(start_date)
+        if end_date:
+            where_clauses.append("date(started_at) <= date(?)")
+            params.append(end_date)
+        if user_id:
+            where_clauses.append("user_id = ?")
+            params.append(user_id)
+
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        with get_conn() as conn:
+            _ensure_activity_tracking_tables(conn)
+            rows = conn.execute(
+                f"""
+                SELECT
+                    date(started_at) AS work_date,
+                    user_id,
+                    COUNT(*) AS session_count,
+                    SUM(COALESCE(activity_seconds, 0)) AS billable_seconds,
+                    SUM(COALESCE(inactive_seconds, 0)) AS inactive_seconds,
+                    SUM(COALESCE(activity_seconds, 0) + COALESCE(inactive_seconds, 0)) AS total_logged_seconds,
+                    MIN(started_at) AS first_session_at,
+                    MAX(COALESCE(ended_at, last_seen_at, started_at)) AS last_session_at
+                FROM activity_sessions
+                {where_sql}
+                GROUP BY date(started_at), user_id
+                ORDER BY work_date DESC, user_id ASC
+                """,
+                params,
+            ).fetchall()
+
+        rollup: list[dict[str, Any]] = []
+        for row in rows:
+            rec = dict(row)
+            billable_seconds = int(rec.get("billable_seconds") or 0)
+            inactive_seconds = int(rec.get("inactive_seconds") or 0)
+            total_logged_seconds = int(rec.get("total_logged_seconds") or 0)
+            rec["billable_hours"] = round(billable_seconds / 3600, 2)
+            rec["inactive_hours"] = round(inactive_seconds / 3600, 2)
+            rec["total_logged_hours"] = round(total_logged_seconds / 3600, 2)
+            rec["activity_ratio"] = (billable_seconds / total_logged_seconds) if total_logged_seconds > 0 else None
+            rollup.append(rec)
+
+        return jsonify(
+            {
+                "filters": {
+                    "start_date": start_date or None,
+                    "end_date": end_date or None,
+                    "user_id": user_id or None,
+                },
+                "rows": rollup,
+                "row_count": len(rollup),
+            }
+        )
 
     return app
 

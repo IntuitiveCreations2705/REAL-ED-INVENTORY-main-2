@@ -1,0 +1,11 @@
+This is your SOURCE OF TRUTH.
+
+2.ADMIN_GATE folder contains MASTER SETTINGS sheet.  There is a BACKUP here: /2_ADMIN_GATE_SNAPSHOTS_BACKUPS/LOGS_Master Inventory Mt Mellum 2026 STAFF_ADMIN/EDIT_01_GUI folder.
+
+Formula to fill Event list Column M Tags is: =IF($M$2="","",XLOOKUP($M$2,EVENT_DEFINITIONS!$A:$A,EVENT_DEFINITIONS!$B:$B,""))
+
+Formula for EventNames Dropdown is: =FILTER(EVENT_DEFINITIONS!A2:A200, EVENT_DEFINITIONS!A2:A200<>"")
+
+=IFERROR(INDEX('MASTER STATUS SHEET'!$A:$L,ROW(),COLUMN()), "")
+
+Formula for sheet fill from Event selection is: =IFERROR(INDEX('MASTER STATUS SHEET'!$A:$L,ROW(),COLUMN()), "")
