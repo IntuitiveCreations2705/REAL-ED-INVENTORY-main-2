@@ -1,6 +1,12 @@
 @echo off
 setlocal enabledelayedexpansion
 
+if /I not "%~1"=="IMPLEMENT" (
+  echo BLOCKED: Hard-rule gate active.
+  echo Usage: BUILD_EXE_AND_PREP.bat IMPLEMENT
+  exit /b 1
+)
+
 cd /d "%~dp0"
 
 set "APP_DIR=%cd%\inventory_ui"

@@ -1,6 +1,12 @@
 @echo off
 setlocal enabledelayedexpansion
 
+if /I not "%~1"=="IMPLEMENT" (
+  echo BLOCKED: Hard-rule gate active.
+  echo Usage: build_windows_exe.bat IMPLEMENT
+  exit /b 1
+)
+
 cd /d "%~dp0"
 
 set "OUTPUT_NAME=REAL-ED-Admin"
