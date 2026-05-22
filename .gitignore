@@ -1,3 +1,13 @@
 # Local accidental artifacts
 REAL-ED-INVENTORY-main-2/
 inventory_app/ui/static/git push --set-upstream origin main
+# Sandbox databases (local, ephemeral test environments)
+sql_inventory_sb2.db
+sql_inventory_sb2.db-wal
+sql_inventory_sb2.db-shm
+sql_inventory_sb3.db
+sql_inventory_sb3.db-wal
+sql_inventory_sb3.db-shm
+
+# SB3 rehearsal logs
+/var/log/sb3-rehearsal*.log

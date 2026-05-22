@@ -6,15 +6,20 @@ recorded in the schema_migrations tracking table.
 
 Usage (from the repo root or from inventory_app/ui/):
     python inventory_app/ui/migrate.py
+    
+Environment variables:
+    INVENTORY_DB_PATH — Override default DB path (for sandbox support)
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DB_PATH = ROOT / "sql_inventory_master.db"
+DB_PATH = Path(os.getenv("INVENTORY_DB_PATH", str(ROOT / "sql_inventory_master.db"))).resolve()
 MIGRATIONS_DIR = ROOT / "inventory_app" / "migrations"
+DEFAULT_EVENT_THEME_ACCENT = "#4F8CFF"
 DEFAULT_EVENT_THEME_ACCENT = "#4F8CFF"
 ROUGH_EVENT_THEME_COLORS = {
     "Real Tantra": "#FB0404",
