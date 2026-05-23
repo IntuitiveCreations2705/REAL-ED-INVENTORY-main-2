@@ -53,7 +53,7 @@ def seed_minimal_users() -> None:
         now_iso = datetime.now(timezone.utc).isoformat()
         
         # Minimal users (admin, leadership, operator; skip viewer for rehearsal)
-        test_users = [
+        test_users: list[dict[str, Any]] = [
             {
                 "username": "admin_sb3",
                 "display_name": "Admin - SB3 Rehearsal",
@@ -115,7 +115,7 @@ def seed_minimal_inventory() -> None:
         now_iso = datetime.now(timezone.utc).isoformat()
         
         # Minimal items for smoke tests
-        minimal_items = [
+        minimal_items: list[dict[str, Any]] = [
             {
                 "item_id": "SMOKE01",
                 "item_name": "Smoke Test Item 1",

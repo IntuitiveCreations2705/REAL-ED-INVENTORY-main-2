@@ -53,7 +53,7 @@ def seed_test_users() -> None:
         now_iso = datetime.now(timezone.utc).isoformat()
         
         # Test users to create (role_id values from roles table)
-        test_users = [
+        test_users: list[dict[str, Any]] = [
             {
                 "username": "admin_test",
                 "display_name": "Admin Test User",
