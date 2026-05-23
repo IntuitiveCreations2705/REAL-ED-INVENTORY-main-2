@@ -11,6 +11,12 @@ This file is the functional + visual contract across admin screens.
 - Any deviation must be pre-declared in the Change Gate.
 - Going-forward lock reference: [GLOBAL_SCENARIO_LOCK.md](GLOBAL_SCENARIO_LOCK.md).
 
+## Tier responsibility boundary
+- Leadership-tier views are for coordination, approval, review, and validation.
+- Leadership-tier views are not the default home for BOX allocation or box-scope execution.
+- Operational-tier views own box-aware execution, count handling, and box assignment workflows.
+- Task Team Leader is the bridge exception and may surface box-aware controls when the contract explicitly requires it.
+
 ## Global identity and display boundary (authoritative)
 - `item_id` is the sole immutable existence identity for inventory entities.
 - UI labels may be transformed/composed for readability, but display text is non-identity.
@@ -52,6 +58,7 @@ This file is the functional + visual contract across admin screens.
 - Sync execution must support safe multi-device usage (idempotent pull/apply behavior).
 - Import actions must be auditable (who/when/what changed).
 - Conflict resolution policy must be explicit before enabling merge automation.
+- Leadership validates and reviews the flow; operational tiers own box-aware execution and scoped collection.
 - Approved sync architecture baseline is defined in [SYNC_ARCHITECTURE_DECISION.md](SYNC_ARCHITECTURE_DECISION.md).
 
 ## Deployment/operations contract (MVP)

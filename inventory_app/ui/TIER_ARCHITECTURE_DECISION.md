@@ -14,6 +14,7 @@ Establish a secure, scalable, extensible architecture with strong data protectio
 - **Non-overlapping device edit rights**: No two devices share edit access to the same field
 - **Intranet-only satellite sync**: Offline-capable devices sync via button-pull, Leadership-validated
 - **Future-proof team provisioning**: New team UIs provisioned by assigning BOX prefix ranges, no code restructuring required
+- **Tier separation rule**: Leadership tiers coordinate, approve, and validate; BOX allocation responsibility lives in the operational tier, except where a role is explicitly designated as a bridge case
 
 ## Final Tier Structure
 
@@ -26,7 +27,7 @@ Two internal levels under MOM:
 
 - **MOM-L2 (Engineering/Admin Console)**
   - Access: Owner + explicitly approved engineering admins
-  - Purpose: schema/version management, repair tools, migration controls, rule governance, BOX prefix allocation, app versioning
+  - Purpose: schema/version management, repair tools, migration controls, rule governance, BOX prefix policy governance, app versioning
 
 Both MOM levels are restricted and not available to staff users.
 
@@ -46,9 +47,9 @@ Operational admin interface with role-based sub-tiers:
   - Inherits: Global UI template, Leadership validation controls
 
 - **Tier 2.2 — Leadership Sub-tier** (Multi-role coordinator layer)
-  - Access: BOX prefix-restricted edit scope, satellite sync pull approval/validation
-  - Purpose: Approve satellite changes, resolve sync conflicts, manage team-specific data, coordinate workflows
-  - Edit scope: BOX prefixes assigned to their team(s)
+  - Access: Coordination, approval, review, and validation scope; not a BOX-allocation tier by default
+  - Purpose: Approve satellite changes, resolve sync conflicts, manage team workflows, monitor operational readiness
+  - Edit scope: Limited to leadership-owned governance fields and non-box operational metadata unless explicitly granted by contract
   - Inherits: Global UI template, change validation + audit logging
   
   **Tier 2.2 Role Specializations** (configured per user, same UI contract):
@@ -57,7 +58,7 @@ Operational admin interface with role-based sub-tiers:
   - **Project Coordinator**: Project-level inventory and milestone tracking
   - **Training Coordinator**: Event crew training cordination.
   - **Scheduling Coordinator**: Event timing coordinator.
-  - **Task Team Leader**: Task-specific team management and handoff coordination
+  - **Task Team Leader**: Task-specific team management and handoff coordination; bridge role that may reference box-level scope earlier than other leadership roles when contractually required
 
 - **Tier 2.3 — Management Sub-tier**
   - Access: Read-only to assigned BOX prefixes, reporting/analytics views
@@ -85,8 +86,8 @@ Crew-facing interfaces with role-based sub-tiers:
 
 - **Tier 3.2 — Operations Sub-tier**
   - Access: Broader BOX prefix scope than Crew (multi-team coordination)
-  - Purpose: Cross-team coordination, mini-app results aggregation, print-list generation
-  - Edit scope: Leadership-approved BOX prefix ranges
+  - Purpose: Cross-team coordination, mini-app results aggregation, print-list generation, BOX allocation execution
+  - Edit scope: Leadership-approved BOX prefix ranges and operational box assignment rules
   - Offline-capable: Intranet-only sync via button-pull, Leadership validation
   - Inherits: Global UI template
 
@@ -102,7 +103,7 @@ Global inheritance contract reference: [GLOBAL_UI_TEMPLATE.md](GLOBAL_UI_TEMPLAT
 
 ## Data protection controls (mandatory)
 - Least-privilege RBAC at all tiers.
-- **BOX prefix allocation**: Tier 2.1/2.2 and device identity determine editable BOX ranges.
+- **BOX prefix allocation**: Tier 2.1/2.2 do not own BOX allocation by default; Tier 3 operations own execution of BOX assignment rules, with device identity determining editable BOX ranges.
 - **Non-overlapping edit enforcement**: Server validates that no two devices hold edit access to same field in same BOX.
 - Server-side authorization enforcement (UI constraints are not security controls).
 - MFA + restricted network access for MOM tiers.
@@ -133,7 +134,7 @@ Global inheritance contract reference: [GLOBAL_UI_TEMPLATE.md](GLOBAL_UI_TEMPLAT
 
 ## BOX Prefix Allocation System (Foundational Framework)
 - **Allocation unit**: BOX prefix (first character or multi-char pattern of `box_number`)
-- **Assignment granularity**: Team/role → BOX prefix range(s)
+- **Assignment granularity**: Team/role → BOX prefix range(s), executed by the operational tier
 - **Future provisioning**: New team UI = assign BOX prefix range in MOM-L2 + configure Tier 2.2/3.1 menu routing
 - **Device mapping**: MOM-L2 assigns device_id → BOX prefix range(s) for satellite devices
 - **Edit scope validation**: Tier 1 rejects any change to BOX outside device's allocated range

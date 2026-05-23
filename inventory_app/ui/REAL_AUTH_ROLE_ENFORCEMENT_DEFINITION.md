@@ -24,6 +24,13 @@ In this app, ROLE is split into four distinct layers:
 
 These layers are linked but independently defined.
 
+### Leadership versus operations boundary
+
+- **Leadership** is a coordination, approval, validation, and workflow-management layer.
+- Leadership is **not** the default BOX-allocation layer.
+- BOX allocation, operational prefix execution, and box-scoped task handling belong to the operational tier.
+- **Task Team Leader** is the bridge exception and may carry a limited overlap into box-aware operations when explicitly required by contract.
+
 ---
 
 ## Endpoint access policy

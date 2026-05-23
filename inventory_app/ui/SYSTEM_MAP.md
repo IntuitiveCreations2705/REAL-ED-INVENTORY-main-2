@@ -81,6 +81,12 @@ erDiagram
   - Focus: curate canonical `item_id` + `item_name` dictionary.
 - **Core backend:** Flask + SQLite integrity rules + audit trail.
 
+## 4.1) Role boundary note
+
+- Leadership is a coordination / validation layer, not the default BOX-allocation layer.
+- BOX allocation and operational prefix execution belong to the operational tier.
+- **Task Team Leader** is the bridge exception and may reference box scope earlier than other leadership roles when the contract requires it.
+
 Think of it as:
 
 - Satellites = operator screens

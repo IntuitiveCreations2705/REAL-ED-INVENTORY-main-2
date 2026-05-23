@@ -26,6 +26,12 @@ It turns "Global UI template" from a concept into a concrete build contract.
 - Reduce user relearning between Admin, Leadership, Management, Facilitator, Crew, and Operations views.
 - Preserve integrity-first patterns (status visibility, controlled save flow, audit-friendly actions).
 
+## Tier responsibility boundary
+- Leadership templates are for coordination, approval, review, and validation.
+- Operational templates are for box-aware execution, collection, and scoped edits.
+- Leadership templates must not imply default box-allocation authority.
+- Task Team Leader is a bridge exception and may expose box-aware controls when the contract explicitly requires it.
+
 ## Source-of-truth relationship
 - Visual + behavior baseline: [UI_CONTRACT_BASELINE.md](UI_CONTRACT_BASELINE.md)
 - Tier inheritance and role model: [TIER_ARCHITECTURE_DECISION.md](TIER_ARCHITECTURE_DECISION.md)
@@ -57,6 +63,7 @@ All inheriting screens must include these regions in this order:
 - **Save discipline**: row-level or unit-level save actions must be explicit.
 - **Validation-first UX**: required-field and rule violations must block save with clear message.
 - **Theme consistency**: use shared tokens/classes from `static/admin_theme.css`.
+- **Scope clarity**: if a screen is leadership-tier, it should present workflow state and approval context before any box-aware action.
 - **Box strategy model (MVP)**: when a box is selected, the view may render results as a collapsible box-group where:
    - membership is governed by `box_number` key coherence,
    - group heading is derived from `box_label` (fallback to box code),

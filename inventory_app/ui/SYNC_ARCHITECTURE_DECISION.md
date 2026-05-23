@@ -5,6 +5,8 @@ Status: **Approved baseline for MVP implementation**
 ## 1) Sync mode
 - **Pull + Push** is the standard mode.
 - Mode is preset/configured in app settings (not ad-hoc per request).
+- Leadership validates and approves sync flow; it does not own BOX allocation by default.
+- Box-scoped operational execution belongs to the operational tier, with Task Team Leader treated as the bridge exception when required.
 
 ## 2) Payload schema + versioning
 - Every sync payload must include:
