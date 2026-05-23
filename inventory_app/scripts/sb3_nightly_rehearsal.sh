@@ -4,6 +4,7 @@
 # Purpose: Validate end-to-end system deployment, backup/restore cycle, and smoke tests
 # Cadence: Nightly via systemd timer (sb3-rehearsal.timer)
 # Log:     /var/log/sb3-rehearsal.log (append mode, rotated weekly)
+# Backup:  Daily SB3 DB snapshot to LANIA DR drive with SHA256 verification
 
 set -euo pipefail
 
@@ -15,6 +16,7 @@ SB3_DB="$REPO_ROOT/sql_inventory_sb3.db"
 SB1_DB="$REPO_ROOT/sql_inventory_master.db"
 SB3_PORT=5052
 TIMEOUT_SECONDS=300
+LANIA_SB3_BACKUP="/Volumes/LANIA/REAL-ED-DR/sb3_backups"
 
 # Ensure log directory exists
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -57,7 +59,37 @@ main() {
     fi
     log "Starting fresh log file"
     
-    # Step 2: Clean (destroy old SB3)
+    # Step 2: Backup Prior SB3 to LANIA (before destruction)
+    log_section "Backup: Archive Previous SB3 State to LANIA"
+    if [[ -f "$SB3_DB" ]]; then
+        mkdir -p "$LANIA_SB3_BACKUP"
+        local timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+        local backup_name="sql_inventory_sb3_${timestamp}.db"
+        local backup_path="$LANIA_SB3_BACKUP/$backup_name"
+        local checksum_file="${backup_path}.sha256"
+        
+        log "Backing up SB3 database to LANIA: $backup_name"
+        cp "$SB3_DB" "$backup_path"
+        
+        # Verify checksum
+        if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 "$backup_path" > "$checksum_file"
+        else
+            sha256sum "$backup_path" > "$checksum_file"
+        fi
+        
+        # Record in manifest
+        local size=$(stat -f%z "$backup_path" 2>/dev/null || stat -c%s "$backup_path" 2>/dev/null)
+        echo "$timestamp,$backup_name,$size,$backup_name.sha256" >> "$LANIA_SB3_BACKUP/manifest.csv" 2>/dev/null || true
+        
+        log "✓ SB3 backup archived: $backup_name (size: $size bytes)"
+        
+        # Rotate old backups (keep 30 days)
+        find "$LANIA_SB3_BACKUP" -maxdepth 1 -type f -name 'sql_inventory_sb3_*.db' -mtime +30 -print -delete || true
+        find "$LANIA_SB3_BACKUP" -maxdepth 1 -type f -name 'sql_inventory_sb3_*.db.sha256' -mtime +30 -print -delete || true
+    fi
+    
+    # Step 3: Clean (destroy old SB3)
     log_section "Clean: Destroy Old SB3 Environment"
     if pgrep -f "run_admin.py.*5052" > /dev/null; then
         log "Stopping Flask on port $SB3_PORT..."
@@ -70,7 +102,7 @@ main() {
     fi
     log "Old SB3 environment cleaned"
     
-    # Step 3: Initialize (clone SB1 baseline)
+    # Step 4: Initialize (clone SB1 baseline)
     log_section "Initialize: Clone SB1 Baseline"
     if [[ ! -f "$SB1_DB" ]]; then
         log_error "SB1 baseline DB not found: $SB1_DB"
