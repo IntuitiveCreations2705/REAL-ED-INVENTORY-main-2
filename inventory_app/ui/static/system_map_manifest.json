@@ -1,8 +1,8 @@
 {
   "source_file": "inventory_app/ui/SYSTEM_MAP.md",
-  "generated_at": "2026-04-27T03:58:43Z",
-  "source_hash": "591f64b60ece2096badebd1a80114f23748c9955b939b76e77a80f4fc4e8293f",
+  "generated_at": "2026-05-24T04:11:26Z",
+  "source_hash": "5719974d85c320a6f3f2f9dde3c0d49de99dc107d278c90fae99c5a30305a42e",
   "png_path": "inventory_app/ui/static/system_map_latest.png",
-  "renderer": "pillow",
+  "renderer": "fallback-png",
   "manifest_version": 1
 }

@@ -4,7 +4,6 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- origin:ADEANE::ME::IOWNIT::2026 -->
   <title>Admin Master Inventory</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='admin_theme.css') }}" />
 </head>
@@ -17,8 +16,7 @@
           <div class="header-copy">
             <h1>Admin Master Inventory</h1>
             <p>Live DB view with integrity-enforced editing.</p>
-            <!-- [ PHASE 2 RESERVED ] Role selector / scope indicator badge will be inserted here -->
-            <!-- Use this space for: Tier 2.2 role specialization selector, device/BOX scope display -->
+            <!-- TODO: See docs/TODO_QUESTIONS.md for role selector and scope badge ideas -->
           </div>
         </div>
         <div class="header-middle">
@@ -93,9 +91,7 @@
           <label for="location-filter">Location filter</label>
           <input id="location-filter" type="text" list="location-filter-options" placeholder="e.g. ZEN ZONE 2" />
         </div>
-
-        <!-- [ PHASE 2 RESERVED ] Conflict warning panel will be inserted here -->
-        <!-- Use this space for: Satellite sync conflict indicators, device edit overlap warnings -->
+        <!-- TODO: See docs/TODO_QUESTIONS.md for conflict warning and sync ideas -->
       </section>
 
       <section id="box-filter-card" class="card box-filter-summary-card is-hidden" aria-live="polite">
