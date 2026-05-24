@@ -1,5 +1,12 @@
+from __future__ import annotations
+
+import argparse
+import os
+import threading
+import webbrowser
+
 from app import create_app
-from db import check_schema, get_conn, stamp_origin
+from db import DB_PATH, check_schema, get_conn, stamp_origin
 
 warnings = check_schema()
 if warnings:
@@ -17,5 +24,46 @@ finally:
 
 app = create_app()
 
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run the REAL-ED admin UI")
+    parser.add_argument("--host", default=os.getenv("INVENTORY_HOST", "127.0.0.1"))
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("INVENTORY_PORT", "5050")),
+    )
+    parser.add_argument(
+        "--open-browser",
+        action="store_true",
+        help="Open the UI URL in the default browser after startup.",
+    )
+    parser.add_argument(
+        "--label",
+        default=os.getenv("INVENTORY_SANDBOX_LABEL", ""),
+        help="Optional human-readable sandbox label shown in terminal startup output.",
+    )
+    return parser
+
+
+def _open_browser_later(url: str) -> None:
+    timer = threading.Timer(0.8, lambda: webbrowser.open(url))
+    timer.daemon = True
+    timer.start()
+
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5050, debug=True)
+    args = _build_parser().parse_args()
+    label = f" [{args.label}]" if args.label else ""
+    url = f"http://{args.host}:{args.port}"
+
+    print("\n═════════════════════════════════════════════════════════")
+    print(f"REAL-ED ADMIN UI{label}")
+    print("═════════════════════════════════════════════════════════")
+    print(f"URL: {url}")
+    print(f"DB : {DB_PATH}")
+    print("Use /api/health or the header badge to verify sandbox.\n")
+
+    if args.open_browser:
+        _open_browser_later(url)
+
+    app.run(host=args.host, port=args.port, debug=True)

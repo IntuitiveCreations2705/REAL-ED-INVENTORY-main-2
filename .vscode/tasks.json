@@ -2,14 +2,65 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "Run Inventory Admin UI",
+			"label": "Start Inventory Admin UI Server: SB1",
 			"type": "shell",
 			"command": "${workspaceFolder}/.venv/bin/python",
+			"options": {
+				"cwd": "${workspaceFolder}/inventory_app/ui",
+				"env": {
+					"INVENTORY_DB_PATH": "${workspaceFolder}/sql_inventory_master.db",
+					"INVENTORY_PORT": "5050",
+					"INVENTORY_SANDBOX_LABEL": "SB1 MASTER"
+				}
+			},
 			"args": [
-				"${workspaceFolder}/inventory_app/ui/run_admin.py"
+				"${workspaceFolder}/inventory_app/ui/run_admin.py",
+				"--label=SB1 MASTER"
 			],
 			"isBackground": true,
 			"group": "build"
+		},
+		{
+			"label": "Start Inventory Admin UI Server: SB2",
+			"type": "shell",
+			"command": "${workspaceFolder}/.venv/bin/python",
+			"options": {
+				"cwd": "${workspaceFolder}/inventory_app/ui",
+				"env": {
+					"INVENTORY_DB_PATH": "${workspaceFolder}/sql_inventory_sb2.db",
+					"INVENTORY_PORT": "5051",
+					"INVENTORY_SANDBOX_LABEL": "SB2 TEST"
+				}
+			},
+			"args": [
+				"${workspaceFolder}/inventory_app/ui/run_admin.py",
+				"--label=SB2 TEST"
+			],
+			"isBackground": true
+		},
+		{
+			"label": "Start Inventory Admin UI Server: SB3",
+			"type": "shell",
+			"command": "${workspaceFolder}/.venv/bin/python",
+			"options": {
+				"cwd": "${workspaceFolder}/inventory_app/ui",
+				"env": {
+					"INVENTORY_DB_PATH": "${workspaceFolder}/sql_inventory_sb3.db",
+					"INVENTORY_PORT": "5052",
+					"INVENTORY_SANDBOX_LABEL": "SB3 APPLICATION"
+				}
+			},
+			"args": [
+				"${workspaceFolder}/inventory_app/ui/run_admin.py",
+				"--label=SB3 APPLICATION"
+			],
+			"isBackground": true
+		},
+		{
+			"type": "Live Preview",
+			"workspacePath": "/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main",
+			"problemMatcher": [],
+			"label": "Live Preview: Run Server"
 		}
 	]
 }

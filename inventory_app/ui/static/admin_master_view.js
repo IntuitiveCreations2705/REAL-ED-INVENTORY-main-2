@@ -69,6 +69,7 @@ const els = {
   boxFilterDetailVisible: document.getElementById('box-filter-detail-visible'),
   boxFilterDetailLinked: document.getElementById('box-filter-detail-linked'),
   boxFilterDetailLocations: document.getElementById('box-filter-detail-locations'),
+  sandboxBadge: document.getElementById('sandbox-badge'),
   eventBeaconName: document.getElementById('event-beacon-name'),
   eventBeaconMeta: document.getElementById('event-beacon-meta'),
 };
@@ -1333,11 +1334,44 @@ function updateProgress() {
 }
 
 async function checkHealth() {
-  const res = await fetch('/api/health');
-  const h = await res.json();
-  if (h.foreign_key_violations > 0) {
-    setStatus(`WARNING: FK violations = ${h.foreign_key_violations}`, true);
+  try {
+    const res = await fetch('/api/health');
+    const h = await res.json();
+    updateSandboxBadge(h.db_path);
+    if (h.foreign_key_violations > 0) {
+      setStatus(`WARNING: FK violations = ${h.foreign_key_violations}`, true);
+    }
+  } catch (err) {
+    updateSandboxBadge('');
   }
+}
+
+function updateSandboxBadge(dbPath) {
+  if (!els.sandboxBadge) return;
+
+  const normalized = String(dbPath || '').toLowerCase();
+  let label = 'UNK';
+  let className = 'sandbox-badge--unknown';
+  let title = 'Sandbox status unknown';
+
+  if (normalized.includes('sb3')) {
+    label = 'SB3';
+    className = 'sandbox-badge--sb3';
+    title = 'SB3 APPLICATION';
+  } else if (normalized.includes('sb2')) {
+    label = 'SB2';
+    className = 'sandbox-badge--sb2';
+    title = 'SB2 TEST';
+  } else if (normalized.includes('master') || normalized.includes('sb1')) {
+    label = 'SB1';
+    className = 'sandbox-badge--sb1';
+    title = 'SB1 MASTER';
+  }
+
+  els.sandboxBadge.textContent = label;
+  els.sandboxBadge.className = `sandbox-badge ${className}`;
+  els.sandboxBadge.title = title;
+  els.sandboxBadge.setAttribute('aria-label', title);
 }
 
 // ─── Dirty-Row Management ───────────────────────────────────────────────────

@@ -24,6 +24,8 @@ echo "      Nightly 4am automation validates backup/restore cycle"
 echo "═════════════════════════════════════════════════════════"
 echo ""
 
-export INVENTORY_DB_PATH="../sql_inventory_sb3.db"
-python3 run_admin.py IMPLEMENT --sandbox=3
+export INVENTORY_DB_PATH="../../sql_inventory_sb3.db"
+export INVENTORY_PORT="5052"
+export INVENTORY_SANDBOX_LABEL="SB3 APPLICATION"
+python3 run_admin.py --open-browser --label="SB3 APPLICATION"
 

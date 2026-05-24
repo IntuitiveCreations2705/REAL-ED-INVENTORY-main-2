@@ -27,7 +27,7 @@ Anything listed here is a **question to consider**, not an action item for the c
 - **Where:** Conflict panel area
 - **Why:** Warn if multiple devices are editing the same row simultaneously
 - **Decision needed:** Is this required? What UI pattern? When to implement?
-- **Status:** QUESTION — document decision in `docs/DECISIONS.md` if approved
+   - **Status:** QUESTION — document decision in `docs/DECISIONS.md` if approved
 
 ---
 

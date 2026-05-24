@@ -23,6 +23,8 @@ echo "NOTE: SB2 is fully mutable; all UIs available for testing"
 echo "═════════════════════════════════════════════════════════"
 echo ""
 
-export INVENTORY_DB_PATH="../sql_inventory_sb2.db"
-python3 run_admin.py IMPLEMENT --sandbox=2
+export INVENTORY_DB_PATH="../../sql_inventory_sb2.db"
+export INVENTORY_PORT="5051"
+export INVENTORY_SANDBOX_LABEL="SB2 TEST"
+python3 run_admin.py --open-browser --label="SB2 TEST"
 

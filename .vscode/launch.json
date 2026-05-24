@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Open Admin UI: SB1 in VS Code",
+      "type": "editor-browser",
+      "request": "launch",
+      "url": "http://127.0.0.1:5050",
+      "webRoot": "${workspaceFolder}/inventory_app/ui",
+      "preLaunchTask": "Start Inventory Admin UI Server: SB1"
+    },
+    {
+      "name": "Open Admin UI: SB2 in VS Code",
+      "type": "editor-browser",
+      "request": "launch",
+      "url": "http://127.0.0.1:5051",
+      "webRoot": "${workspaceFolder}/inventory_app/ui",
+      "preLaunchTask": "Start Inventory Admin UI Server: SB2"
+    },
+    {
+      "name": "Open Admin UI: SB3 in VS Code",
+      "type": "editor-browser",
+      "request": "launch",
+      "url": "http://127.0.0.1:5052",
+      "webRoot": "${workspaceFolder}/inventory_app/ui",
+      "preLaunchTask": "Start Inventory Admin UI Server: SB3"
+    }
+  ]
+}
