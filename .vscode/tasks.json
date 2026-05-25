@@ -74,6 +74,17 @@
 			"workspacePath": "/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main",
 			"problemMatcher": [],
 			"label": "Live Preview: Run Server"
+		},
+		{
+			"label": "Checkpoint + Push + Sync LANIA",
+			"type": "shell",
+			"command": "zsh",
+			"args": [
+				"-lc",
+				"chmod +x '${workspaceFolder}/inventory_app/scripts/checkpoint_to_lania.sh' && '${workspaceFolder}/inventory_app/scripts/checkpoint_to_lania.sh'"
+			],
+			"problemMatcher": [],
+			"group": "build"
 		}
 	]
 }

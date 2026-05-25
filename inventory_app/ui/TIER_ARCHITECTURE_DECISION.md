@@ -7,9 +7,11 @@ Status: **Stage 1 - Dev Inventory System (12-Apr-2026)**
 **Next Phase**: Phase 2 - Leadership & Team UI provisioning (see Phase 2 Roadmap below)
 
 ## Objective
+
 Establish a secure, scalable, extensible architecture with strong data protection across all areas and support for unlimited role-based UI provisioning.
 
 ## Core Principles
+
 - **BOX prefix-based access control**: Data ownership determined by `box_number` prefix (e.g., first character)
 - **Non-overlapping device edit rights**: No two devices share edit access to the same field
 - **Intranet-only satellite sync**: Offline-capable devices sync via button-pull, Leadership-validated
@@ -19,6 +21,7 @@ Establish a secure, scalable, extensible architecture with strong data protectio
 ## Final Tier Structure
 
 ### Tier 0 — MOM Control Plane (Two-Level MOM)
+
 Two internal levels under MOM:
 
 - **MOM-L1 (Operations Console)**
@@ -32,6 +35,7 @@ Two internal levels under MOM:
 Both MOM levels are restricted and not available to staff users.
 
 ### Tier 1 — Core Data + Sync Service Layer
+
 - Authoritative validation, sync ingestion, conflict handling, and audit.
 - API-first service layer consumed by all UI tiers.
 - Satellite sync controller: manages button-pull requests, changed-record delivery, conflict detection & warning.
@@ -39,6 +43,7 @@ Both MOM levels are restricted and not available to staff users.
 - No normal staff-facing UI surface required.
 
 ### Tier 2 — Admin Staff UI
+
 Operational admin interface with role-based sub-tiers:
 
 - **Tier 2.1 — Admin Sub-tier**
@@ -75,6 +80,7 @@ Operational admin interface with role-based sub-tiers:
 All Tier 2 sub-tiers must inherit Global UI template standards (defined in [GLOBAL_UI_TEMPLATE.md](GLOBAL_UI_TEMPLATE.md)).
 
 ### Tier 3 — Operations / Task-Focused UIs
+
 Crew-facing interfaces with role-based sub-tiers:
 
 - **Tier 3.1 — Crew Sub-tier**
@@ -96,12 +102,14 @@ All Tier 3 sub-tiers support offline operation with intranet-only sync.
 Global inheritance contract reference: [GLOBAL_UI_TEMPLATE.md](GLOBAL_UI_TEMPLATE.md)
 
 ### Tier 4 — Team/Crew Extensions
+
 - Future provisioning layer for new team-specific UIs
 - New teams assigned BOX prefix range(s) → automatic access control scoping
 - Inherit Tier 3 or Tier 2 template based on role requirement
 - No code restructuring required; provision via MOM-L2 configuration
 
 ## Data protection controls (mandatory)
+
 - Least-privilege RBAC at all tiers.
 - **BOX prefix allocation**: Tier 2.1/2.2 do not own BOX allocation by default; Tier 3 operations own execution of BOX assignment rules, with device identity determining editable BOX ranges.
 - **Non-overlapping edit enforcement**: Server validates that no two devices hold edit access to same field in same BOX.
@@ -113,6 +121,7 @@ Global inheritance contract reference: [GLOBAL_UI_TEMPLATE.md](GLOBAL_UI_TEMPLAT
 - Encrypted transport and secure credential handling.
 
 ## ItemID Format Standard (Global Immutable Reference)
+
 - **Format**: `{PREFIX}-{4DIGITS}` (example: `Hi-0001`)
 - **Prefix**: Two-character facility/location code (e.g., `Hi` = High School, `Pr` = Primary, `Gs` = General Store)
 - **Digits**: 4-digit numeric suffix (zero-padded, range `0001`–`9999`)
@@ -124,6 +133,7 @@ Global inheritance contract reference: [GLOBAL_UI_TEMPLATE.md](GLOBAL_UI_TEMPLAT
 - **Migration Note**: Historical format was `{PREFIX}-{6DIGITS}` (e.g., `Hi-000001`). All new ItemIDs must use 4-digit format (Hi-0001) moving forward. Database migration pending for legacy items.
 
 ## Sync & Satellite Model
+
 - **Sync initiation**: Button-pull only (satellite initiates, never auto-syncs).
 - **Data scope**: Changed records only since last sync checkpoint.
 - **Conflict detection**: Server warns if multiple devices edited overlapping BOX ranges (prevented by design, flagged in dev/audit).
@@ -133,6 +143,7 @@ Global inheritance contract reference: [GLOBAL_UI_TEMPLATE.md](GLOBAL_UI_TEMPLAT
 - **Device isolation**: Each satellite device assigned exclusive BOX prefix range(s); edit scope hard-wired server-side.
 
 ## BOX Prefix Allocation System (Foundational Framework)
+
 - **Allocation unit**: BOX prefix (first character or multi-char pattern of `box_number`)
 - **Assignment granularity**: Team/role → BOX prefix range(s), executed by the operational tier
 - **Future provisioning**: New team UI = assign BOX prefix range in MOM-L2 + configure Tier 2.2/3.1 menu routing
@@ -141,6 +152,7 @@ Global inheritance contract reference: [GLOBAL_UI_TEMPLATE.md](GLOBAL_UI_TEMPLAT
 - **Pattern**: To add new team: (1) define prefix, (2) configure menu in MOM-L2, (3) provision devices, (4) assign Leadership validators — no application code restructure required
 
 ## Versioning & Deployment Strategy
+
 - **App versioning**: Semantic (Major.Minor.Patch) tagged at commit
 - **Deployment model**: MOM-L2 orchestrates push to devices (no satellite pull for updates)
 - **Rollout strategy**: Global (all devices) or staged by BOX prefix / device_id
@@ -152,6 +164,7 @@ Global inheritance contract reference: [GLOBAL_UI_TEMPLATE.md](GLOBAL_UI_TEMPLAT
 - **Legacy reference**: Old app retained as reference; new app builds independently against same DB/Tier 1
 
 ## Same Database, Linked but Independent UIs
+
 - **Single source of truth**: One DB across all UIs (primary + mirrored SSD for safe container)
 - **App independence**: Each new UI is provisioned as a separate deployable with own version tag
 - **Tier 1 contract binding**: All UIs must route through same Tier 1 sync/validation layer
@@ -159,11 +172,13 @@ Global inheritance contract reference: [GLOBAL_UI_TEMPLATE.md](GLOBAL_UI_TEMPLAT
 - **Configuration-driven provisioning**: New UI adds no structural code; configured via MOM-L2 with new BOX prefix assignment
 
 ## Governance rule
+
 - Any deviation from this tier model requires explicit contract approval before implementation.
 - BOX prefix assignments managed exclusively by MOM-L2.
 - Device-to-prefix mappings immutable until explicitly revoked by MOM-L2.
 
 ## Foundation statement gate (implemented)
+
 - Global foundation source: `/global system statement.txt` (repo root).
 - Tier 1 now enforces a hard validation gate for all mutating endpoints.
 - If the foundation statement file is missing, empty, or mismatched, writes are blocked.
@@ -178,18 +193,21 @@ Global inheritance contract reference: [GLOBAL_UI_TEMPLATE.md](GLOBAL_UI_TEMPLAT
 The following items are identified as necessary for full production deployment but are deferred to Phase 2 (Leadership & Team UI provisioning):
 
 ### Role & Access Control
+
 - [ ] Role-aware request routing (distinguish Tier 2.1 vs 2.2.* vs 2.3 vs 2.4 access)
 - [ ] Leadership sub-tier role selector in UI (Workshop Mentor, Crew Leader, etc.)
 - [ ] Role context injection in all API requests
 - [ ] Tier 2.4 Facilitator event-scoped window logic (active event detection)
 
 ### Audit & Logging Enhancement
+
 - [ ] Capture `device_id` in all change logs
 - [ ] Capture `role` and `role_specialization` (for Tier 2.2 variants)
 - [ ] Capture `box_prefix` range accessed
 - [ ] Audit trail search/filter by role/device/prefix
 
 ### Satellite Sync & Conflict Model
+
 - [ ] Satellite "PULL" button implementation in Leadership tier
 - [ ] Changed-records-only query optimization (since-last-sync checkpoint)
 - [ ] Conflict detection logic (overlapping BOX ranges flagged)
@@ -197,16 +215,19 @@ The following items are identified as necessary for full production deployment b
 - [ ] Conflict warning dashboard
 
 ### Device Isolation & BOX Enforcement
+
 - [ ] Device registration in MOM-L2 with BOX prefix assignment
 - [ ] Server-side validation: reject edits outside device's allocated BOX range
 - [ ] Non-overlapping edit enforcement per BOX (prevent dual-device conflicts)
 
 ### Versioning & Deployment
+
 - [ ] MOM-L2 app version tracking and push orchestration
 - [ ] Staged rollout by device_id / BOX prefix / role
 - [ ] Version context in API requests for compatibility checks
 
 ### Global Template Enhancements
+
 - [ ] [ **RESERVED** ] Sub-tier role selector section (placeholder in Tier 2 UIs)
 - [ ] [ **RESERVED** ] Satellite sync status indicator (placeholder in Tier 3 UIs)
 - [ ] [ **RESERVED** ] Conflict warning panel (placeholder in status bar)

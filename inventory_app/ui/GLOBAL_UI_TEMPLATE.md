@@ -22,17 +22,20 @@ This file defines the shared UI shell all Tier 2/Tier 3 screens inherit by defau
 It turns "Global UI template" from a concept into a concrete build contract.
 
 ## Purpose
+
 - Keep all operational screens visually and behaviorally consistent.
 - Reduce user relearning between Admin, Leadership, Management, Facilitator, Crew, and Operations views.
 - Preserve integrity-first patterns (status visibility, controlled save flow, audit-friendly actions).
 
 ## Tier responsibility boundary
+
 - Leadership templates are for coordination, approval, review, and validation.
 - Operational templates are for box-aware execution, collection, and scoped edits.
 - Leadership templates must not imply default box-allocation authority.
 - Task Team Leader is a bridge exception and may expose box-aware controls when the contract explicitly requires it.
 
 ## Source-of-truth relationship
+
 - Visual + behavior baseline: [UI_CONTRACT_BASELINE.md](UI_CONTRACT_BASELINE.md)
 - Tier inheritance and role model: [TIER_ARCHITECTURE_DECISION.md](TIER_ARCHITECTURE_DECISION.md)
 - Change process guardrail: [CHANGE_GATE_PROTOCOL.md](CHANGE_GATE_PROTOCOL.md)
@@ -40,6 +43,7 @@ It turns "Global UI template" from a concept into a concrete build contract.
 This file defines **template shape and required regions**.
 
 ## Required layout regions
+
 All inheriting screens must include these regions in this order:
 
 1. **App shell**
@@ -58,6 +62,7 @@ All inheriting screens must include these regions in this order:
    - Persistent status line for load/save/warning/error feedback
 
 ## Mandatory shared behavior
+
 - **Load state clarity**: screen must report row/item load count or explicit failure reason.
 - **Error visibility**: API failures must surface in status UI (no silent blank views).
 - **Save discipline**: row-level or unit-level save actions must be explicit.
@@ -65,23 +70,27 @@ All inheriting screens must include these regions in this order:
 - **Theme consistency**: use shared tokens/classes from `static/admin_theme.css`.
 - **Scope clarity**: if a screen is leadership-tier, it should present workflow state and approval context before any box-aware action.
 - **Box strategy model (MVP)**: when a box is selected, the view may render results as a collapsible box-group where:
-   - membership is governed by `box_number` key coherence,
-   - group heading is derived from `box_label` (fallback to box code),
-   - expanding the group reveals only rows belonging to that selected box.
+  - membership is governed by `box_number` key coherence,
+  - group heading is derived from `box_label` (fallback to box code),
+  - expanding the group reveals only rows belonging to that selected box.
 
 ## Mandatory shared style contract
+
 - Typography, button sizing, spacing rhythm, and control styles follow `admin_theme.css`.
 - Header/action structure remains consistent with `admin_master_view.html` pattern.
 - Status bar style and placement must be consistent across screens.
 
 ## Reserved placeholder regions (Phase 2+)
+
 Keep these placeholder zones available in inheriting templates:
+
 - Role selector / specialization badge
 - Device + BOX scope indicator
 - Satellite sync status indicator
 - Conflict warning panel
 
 ## Inheritance targets
+
 - Tier 2.1 Admin
 - Tier 2.2 Leadership specializations
 - Tier 2.3 Management
@@ -90,18 +99,22 @@ Keep these placeholder zones available in inheriting templates:
 - Tier 3.2 Operations
 
 ## Allowed deviations
+
 Deviation is allowed only when pre-declared and approved in Change Gate for:
+
 - Different data surface type required by task (table vs cards)
 - Role-critical action placement adjustments
 - Accessibility improvements that keep baseline semantics intact
 
 ## Forbidden deviations (without contract approval)
+
 - Removing persistent status feedback
 - Silent save model changes
 - Replacing baseline interaction patterns without disclosure
 - Breaking visual token consistency with shared theme
 
 ## Implementation anchor examples
+
 - `templates/admin_master_view.html`
 - `templates/admin_item_list_view.html`
 - `static/admin_theme.css`

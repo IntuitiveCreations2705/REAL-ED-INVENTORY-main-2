@@ -17,6 +17,7 @@ Status: **Policy document — effective now. Enforcement implementation staged i
 ## Role delineation
 
 In this app, ROLE is split into four distinct layers:
+
 - **Human Role** — the person and their organisational position
 - **Access Role** — the permission level assigned in the system (superadmin / admin / leadership / operator / viewer)
 - **UI Function** — the interface purpose of a given screen or action
@@ -81,6 +82,7 @@ The box identity model mirrors the item model exactly:
 | `box_type` | Physical/categorical type — enables summary counts | `55L Storage`, `AV Case`, `Document Box` |
 
 **Invariants:**
+
 - `box_id` is immutable once assigned. Never repurposed.
 - `box_label` is governed by `box_id` (same relationship as `item_name` → `item_id`).
 - `box_number` is a non-identity reference field. It does not identify a box uniquely.
@@ -89,6 +91,7 @@ The box identity model mirrors the item model exactly:
 
 **`box_type` secondary benefit:**
 Encoding physical type enables summary queries independent of box contents:
+
 - *"How many 55L storage boxes exist?"*
 - *"How many AV cases are in circulation?"*
 This data comes directly from the existing manual naming convention carried into the app.

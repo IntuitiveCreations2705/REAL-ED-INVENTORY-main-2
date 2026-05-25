@@ -104,4 +104,3 @@ Think of it as:
 - Schema migration runner: [migrate.py](migrate.py)
 - Master UI behavior: [static/admin_master_view.js](static/admin_master_view.js)
 - Item List UI behavior: [static/admin_item_list_view.js](static/admin_item_list_view.js)
-

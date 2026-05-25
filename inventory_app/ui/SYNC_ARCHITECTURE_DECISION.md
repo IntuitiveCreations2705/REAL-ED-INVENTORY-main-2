@@ -3,12 +3,14 @@
 Status: **Approved baseline for MVP implementation**
 
 ## 1) Sync mode
+
 - **Pull + Push** is the standard mode.
 - Mode is preset/configured in app settings (not ad-hoc per request).
 - Leadership validates and approves sync flow; it does not own BOX allocation by default.
 - Box-scoped operational execution belongs to the operational tier, with Task Team Leader treated as the bridge exception when required.
 
 ## 2) Payload schema + versioning
+
 - Every sync payload must include:
   - `schema_version`
   - `source_app` (`master` or `mini`)
@@ -20,6 +22,7 @@ Status: **Approved baseline for MVP implementation**
 - Backward compatibility policy for MVP: reject unsupported versions with explicit error.
 
 ## 3) Conflict resolution rule
+
 - Master DB is authoritative for protected/governed fields.
 - Row-level optimistic version check required (`version` match).
 - On conflict:
@@ -28,6 +31,7 @@ Status: **Approved baseline for MVP implementation**
   - require explicit operator resolution path
 
 ## 4) Manual sync UX trigger points
+
 - Trigger points in UI:
   - `Sync Now` (manual run)
   - `Preview Changes` (dry-run validation summary)
@@ -37,6 +41,7 @@ Status: **Approved baseline for MVP implementation**
 - Each sync action must display outcome summary: applied / skipped / conflicted / failed counts.
 
 ## 5) Audit fields per sync event
+
 - Required event-level fields:
   - `sync_event_id`
   - `sync_session_id`
@@ -56,6 +61,7 @@ Status: **Approved baseline for MVP implementation**
   - `error_message` (if failed)
 
 ## 6) Safety requirements
+
 - Idempotent apply behavior required for repeated payload submission.
 - Validation must run before commit.
 - No silent data mutation outside audit trail.
