@@ -4,7 +4,6 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- origin:ADEANE::ME::IOWNIT::2026 -->
   <title>Admin Item ID List</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='admin_theme.css') }}" />
 </head>
@@ -15,8 +14,7 @@
       <div>
         <h1>Admin Item ID List</h1>
         <p>Secondary editable table for item keys during development.</p>
-        <!-- [ PHASE 2 RESERVED ] Item catalog scope filter will be inserted here -->
-        <!-- Use this space for: Team/role-specific item visibility controls, catalog filtering -->
+        <!-- TODO: See docs/TODO_QUESTIONS.md for item catalog scope filtering ideas -->
       </div>
       <div class="header-actions">
         <a class="btn secondary btn-link" href="{{ url_for('index') }}">Back to Master</a>

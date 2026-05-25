@@ -1,0 +1,13 @@
+[Unit]
+Description=REAL-ED SB3 Nightly Standalone Rehearsal
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main
+ExecStart=/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main/inventory_app/scripts/sb3_nightly_rehearsal.sh
+User=%i
+Group=staff
+
+[Install]
+WantedBy=multi-user.target

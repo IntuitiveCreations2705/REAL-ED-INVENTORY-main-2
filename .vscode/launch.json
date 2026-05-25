@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Open Admin UI: SB1 in VS Code",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "open http://127.0.0.1:5050",
+      "preLaunchTask": "Start Inventory Admin UI Server: SB1"
+    },
+    {
+      "name": "Open Admin UI: SB2 in VS Code",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "open http://127.0.0.1:5051",
+      "preLaunchTask": "Start Inventory Admin UI Server: SB2"
+    },
+    {
+      "name": "Open Admin UI: SB3 in VS Code",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "open http://127.0.0.1:5052",
+      "preLaunchTask": "Start Inventory Admin UI Server: SB3"
+    }
+  ]
+}

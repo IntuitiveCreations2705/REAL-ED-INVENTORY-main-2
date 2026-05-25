@@ -205,10 +205,10 @@ body {
 
 .master-shell .header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 42ch) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(84px, 110px) auto;
   grid-template-rows: auto auto;
   align-items: start;
-  column-gap: 16px;
+  column-gap: 12px;
   row-gap: 12px;
 }
 
@@ -227,12 +227,56 @@ body {
   max-width: min(100%, 760px);
 }
 
-/* MIDDLE: flexible collapsing spacer */
+/* MIDDLE: sandbox badge slot */
 .master-shell .header-middle {
   grid-column: 2;
   grid-row: 1;
-  align-self: start;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  min-width: 0;
   width: 100%;
+}
+
+.master-shell .sandbox-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 76px;
+  max-width: 108px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid #7a8495;
+  background: rgba(16, 22, 38, 0.9);
+  color: var(--event-accent-soft);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+}
+
+.master-shell .sandbox-badge--unknown {
+  color: var(--event-accent-soft);
+  border-color: #ff5f5f;
+  background: rgba(64, 10, 18, 0.92);
+}
+
+.master-shell .sandbox-badge--sb1 {
+  color: var(--event-accent-soft);
+  border-color: #4f8cff;
+}
+
+.master-shell .sandbox-badge--sb2 {
+  color: var(--event-accent-soft);
+  border-color: #2bb673;
+}
+
+.master-shell .sandbox-badge--sb3 {
+  color: var(--event-accent-soft);
+  border-color: #d6a84f;
 }
 
 /* RIGHT: beacon + counter */
@@ -264,7 +308,7 @@ body {
 .master-shell .master-event-chooser-row {
   width: 100%;
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .master-shell .master-event-chooser-box {
@@ -1373,7 +1417,7 @@ select:disabled {
   }
 
   .master-shell .header {
-    grid-template-columns: minmax(0, 1fr) minmax(240px, 38ch) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(84px, 110px) auto;
   }
 
   .master-shell .header-left {
@@ -1420,7 +1464,12 @@ select:disabled {
   .master-shell .header-middle {
     grid-column: 1;
     grid-row: 2;
-    width: 100%;
+    width: min(100%, 180px);
+    justify-content: flex-start;
+  }
+
+  .master-shell .sandbox-badge {
+    max-width: 180px;
   }
 
   .master-shell .master-header-col-right {

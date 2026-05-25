@@ -1,0 +1,10 @@
+[Unit]
+Description=Run SB3 rehearsal nightly at 04:00
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+Unit=sb3-rehearsal.service
+
+[Install]
+WantedBy=timers.target

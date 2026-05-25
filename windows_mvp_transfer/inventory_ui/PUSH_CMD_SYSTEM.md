@@ -1,18 +1,29 @@
  
         # PUSH Command System (Reference + Pre-Action Query)
 
-Use this as the standard recall file before any git ACTION/APPLY/push.
+Use this as the standard recall file before any git commit/push/tag action.
 
-## 1) Mandatory Pre-Action Query (ask user first)
+Policy scope: applies to all branches (main, feature, hotfix, WIP).
 
-Copy/paste this block and get explicit answers before pushing:
+Hard rule: commit + push + checkpoint tag are mandatory for each repo-changing action.
+
+No-bypass rule: if any gate answer is N or unclear, stop work immediately.
+
+## 1) Mandatory Pre-Action Gate Query (ask user first)
+
+Copy/paste this block and get explicit answers before committing/pushing/tagging:
 
 - Scope: **Code-only** or **Code + DB**?
-- Branch target: confirm push branch (default `main`?)
+- Branch target: confirm active branch (must apply gate on current branch, including WIP)
 - Snapshot branches required: `stable-*`, `rollback-*`, `revert-*`?
 - Any `--force-with-lease` required? (Default: **No**)
 - Commit message text approved? (Y/N)
+- Commit now? (Y/N)
+- Push now? (Y/N)
+- Create and push checkpoint tag now? (Y/N)
 - Proceed now? (Y/N)
+
+Execution rule: commit message approval plus all four action gates above must be **Y**. If any is **N**, do not proceed.
 
 ## 2) Quick inspect (always first)
 
@@ -22,7 +33,7 @@ git --no-pager branch --show-current
 git --no-pager remote -v
 ```
 
-## 3) Safe recipes
+## 3) Mandatory safe recipes
 
 ### A) Push code files only (exclude DB)
 
@@ -30,7 +41,9 @@ git --no-pager remote -v
 git restore --staged .
 git add inventory_app/ui/README.md inventory_app/ui/static/admin_theme.css
 git commit -m "UI/CSS updates only (no DB)"
-git push origin main
+git push origin $(git --no-pager branch --show-current)
+git tag -a checkpoint-YYYYMMDD-HHMM-<step> -m "<scope + reason>"
+git push origin checkpoint-YYYYMMDD-HHMM-<step>
 ```
 
 ### B) Push code + DB together
@@ -39,17 +52,19 @@ git push origin main
 git restore --staged .
 git add inventory_app/ui/README.md inventory_app/ui/static/admin_theme.css sql_inventory_master.db
 git commit -m "UI/CSS updates and live DB update"
-git push origin main
+git push origin $(git --no-pager branch --show-current)
+git tag -a checkpoint-YYYYMMDD-HHMM-<step> -m "<scope + reason>"
+git push origin checkpoint-YYYYMMDD-HHMM-<step>
 ```
 
 ### C) Create snapshot branches (post-push)
 
 ```bash
-git branch stable-main-YYYY-MM-DD
-git push origin stable-main-YYYY-MM-DD
+git branch stable-<active-branch>-YYYY-MM-DD
+git push origin stable-<active-branch>-YYYY-MM-DD
 
-git branch rollback-YYYY-MM-DD-main
-git push origin rollback-YYYY-MM-DD-main
+git branch rollback-YYYY-MM-DD-<active-branch>
+git push origin rollback-YYYY-MM-DD-<active-branch>
 ```
 
 ### D) Revert branch naming (avoid incomplete names)
@@ -57,8 +72,8 @@ git push origin rollback-YYYY-MM-DD-main
 Use full names only, for example:
 
 ```bash
-git branch revert-YYYY-MM-DD-main
-git push origin revert-YYYY-MM-DD-main
+git branch revert-YYYY-MM-DD-<active-branch>
+git push origin revert-YYYY-MM-DD-<active-branch>
 ```
 
 ## 4) Guardrails
@@ -67,24 +82,27 @@ git push origin revert-YYYY-MM-DD-main
 - Never push unknown staged files.
 - For DB pushes, confirm user accepts binary diff + merge risk.
 - If uncertain, stop and re-run section 1 query.
+- Non-compliance rule: if gate requirements are not met, do not commit, push, or tag.
+- No extra tag-label confirmation is required beyond the section 1 gate.
 
-## 5) Significant-step checkpoint protocol (for congruency + fast rollback)
+## 5) Mandatory checkpoint protocol (for congruency + fast rollback)
 
-Use this at each meaningful build milestone so “current NOW” is always recoverable.
+Use this for every commit event so “current NOW” is always recoverable.
 
-### What counts as a significant step?
+### Required for every commit event
 - Rule logic change (validation/governance/concurrency/audit)
 - Schema/migration change
 - API contract change
 - UX workflow change affecting save/edit behavior
 - Any fix you may need to quickly revert
+- Micro-fix / WIP commit on local branch
 
 ### Timing rule
-- Commit at end of each significant step (not only end of day).
-- Create a snapshot tag immediately after push.
+- Commit, push, and tag as one required sequence for each commit event.
+- Create a checkpoint tag immediately after push.
 - Update daily checklist note with the checkpoint tag.
 
-### Checkpoint recipe (recommended)
+### Checkpoint recipe (mandatory)
 
 ```bash
 git --no-pager status --short
@@ -126,4 +144,4 @@ git push --force-with-lease
 
 ### Current NOW marker policy
 - Latest pushed commit on active branch + latest `checkpoint-*` tag = official “NOW”.
-- Do not proceed to next major step until a checkpoint exists.
+- Do not proceed to any next step until a checkpoint exists.

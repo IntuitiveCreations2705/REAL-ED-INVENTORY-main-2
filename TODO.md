@@ -27,6 +27,30 @@
 
 ---
 
+## P1 — LANIA status checkpoint + operational readiness
+
+- [ ] Update LANIA status to current baseline (checkpoint locked)
+  - Glass View = live status owner
+  - Policy View = canonical structure owner
+  - Canonical layer/node map confirmed:
+    - L6 = Node 4 (Execution / Crew-Task)
+    - L5 = Node 3 (Leadership Oversight)
+    - L4 = Node 2 (Admin Master Operations)
+    - L3 = Central DB
+    - L2 = Node 0 (API/Validation/Audit runtime gate)
+    - L1 = Node 1 (Superadmin governance)
+
+- [ ] Enforce test/commit separation via Sandbox 2 before integration commits
+  - Current runtime check previously showed default mode (`5050`, DB env unset)
+  - Required test context for this stream: SB2 (`INVENTORY_DB_PATH=../sql_inventory_sb2.db`, port `5051`)
+
+- [ ] Operational continuity in event of outage / failover scenario
+  - Ensure SB2 launch + verify + promote pathway is documented and runnable
+  - Confirm backup + restore drill path is tested against current node/layer policy model
+  - Confirm System Map fallback remains available if live glass stream path is unavailable
+
+---
+
 ## P2 — Box label (people-facing names)
 
 - [ ] Add `box_label` column to `master_inventory` (nullable, TEXT)

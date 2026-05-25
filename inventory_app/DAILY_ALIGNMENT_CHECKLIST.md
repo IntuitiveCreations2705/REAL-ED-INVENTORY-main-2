@@ -25,7 +25,10 @@ Owner: Admin/Product Ops
   - Review recent changes for side effects across views.
   - Record drift findings + corrective action owner/date.
 
-- [ ] Create significant-step repo checkpoint (commit + push + checkpoint tag)
+- [ ] Create mandatory repo checkpoint (commit + push + checkpoint tag)
+  - Applies to all branches: main, feature, hotfix, and WIP.
+  - Explicitly confirm each action before execution: Commit (Y/N), Push (Y/N), Tag (Y/N), Proceed (Y/N).
+  - No bypass allowed: if any response is N/unclear, stop work and do not run git actions.
   - Use checkpoint naming from `ui/PUSH_CMD_SYSTEM.md`.
   - Record latest checkpoint tag as official “NOW” stage.
 
@@ -87,6 +90,7 @@ Required promotion criteria:
 - [ ] Drift check completed against baseline docs and current behavior.
 - [ ] Regression checks passed for critical workflows.
 - [ ] Any defects found are either fixed or formally risk-accepted by named authority.
+- [ ] Mandatory repository gate completed: commit + push + checkpoint tag on current branch with explicit per-action confirmations.
 - [ ] Final approver sign-off recorded with date and scope.
 
 Stop-ship conditions:
