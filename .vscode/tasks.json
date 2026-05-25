@@ -2,8 +2,19 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			"label": "Stop Inventory Admin UI Servers",
+			"type": "shell",
+			"command": "zsh",
+			"args": [
+				"-lc",
+				"for p in 5050 5051 5052; do lsof -ti tcp:$p | xargs -r kill -9; done"
+			],
+			"problemMatcher": []
+		},
+		{
 			"label": "Start Inventory Admin UI Server: SB1",
 			"type": "shell",
+			"dependsOn": "Stop Inventory Admin UI Servers",
 			"command": "${workspaceFolder}/.venv/bin/python",
 			"options": {
 				"cwd": "${workspaceFolder}/inventory_app/ui",
@@ -23,6 +34,7 @@
 		{
 			"label": "Start Inventory Admin UI Server: SB2",
 			"type": "shell",
+			"dependsOn": "Stop Inventory Admin UI Servers",
 			"command": "${workspaceFolder}/.venv/bin/python",
 			"options": {
 				"cwd": "${workspaceFolder}/inventory_app/ui",
@@ -41,6 +53,7 @@
 		{
 			"label": "Start Inventory Admin UI Server: SB3",
 			"type": "shell",
+			"dependsOn": "Stop Inventory Admin UI Servers",
 			"command": "${workspaceFolder}/.venv/bin/python",
 			"options": {
 				"cwd": "${workspaceFolder}/inventory_app/ui",
