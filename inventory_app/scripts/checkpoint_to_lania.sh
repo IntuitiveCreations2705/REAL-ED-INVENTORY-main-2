@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main"
-LANIA_REPO="/Volumes/LANIA/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main"
+# Source environment configuration; default to SSD if not set
+ROOT="${INVENTORY_RUNTIME_ROOT:-/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main}"
+
+# Validate runtime root is mounted and accessible
+if [[ ! -d "$ROOT" ]]; then
+    echo "[ERROR] INVENTORY_RUNTIME_ROOT not accessible: $ROOT" >&2
+    echo "[ERROR] Failover: export INVENTORY_RUNTIME_ROOT=/Volumes/LANIA/... and retry" >&2
+    exit 1
+fi
+
+LANIA_BACKUP_BASE="${INVENTORY_BACKUP_SECONDARY:-/Volumes/LANIA}"
+LANIA_REPO="$LANIA_BACKUP_BASE/REAL-ED-INVENTORY-main"
 
 DB_PATH="${INVENTORY_DB_PATH:-$ROOT/sql_inventory_master.db}"
 SNAP_DIR="$ROOT/inventory_app/backups/db_snapshots"
@@ -15,8 +25,8 @@ if [[ ! -f "$DB_PATH" ]]; then
   exit 1
 fi
 
-if [[ ! -d "/Volumes/LANIA" ]]; then
-  echo "[ERROR] LANIA drive not mounted" >&2
+if [[ ! -d "$LANIA_BACKUP_BASE" ]]; then
+  echo "[ERROR] INVENTORY_BACKUP_SECONDARY not mounted: $LANIA_BACKUP_BASE" >&2
   exit 1
 fi
 

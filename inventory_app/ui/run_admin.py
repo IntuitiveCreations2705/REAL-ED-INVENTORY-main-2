@@ -43,11 +43,17 @@ def _build_parser() -> argparse.ArgumentParser:
         default=os.getenv("INVENTORY_SANDBOX_LABEL", ""),
         help="Optional human-readable sandbox label shown in terminal startup output.",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=os.getenv("INVENTORY_DEBUG", "0") in {"1", "true", "TRUE", "yes", "YES"},
+        help="Enable Flask debug mode (default: off unless INVENTORY_DEBUG=1).",
+    )
     return parser
 
 
 def _open_browser_later(url: str) -> None:
-    timer = threading.Timer(0.8, lambda: webbrowser.open(url))
+    timer = threading.Timer(1.5, lambda: webbrowser.open(url))
     timer.daemon = True
     timer.start()
 
@@ -66,4 +72,4 @@ if __name__ == "__main__":
     if args.open_browser:
         _open_browser_later(url)
 
-    app.run(host=args.host, port=args.port, debug=True)
+    app.run(host=args.host, port=args.port, debug=args.debug, use_reloader=False)

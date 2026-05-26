@@ -71,7 +71,7 @@
 		},
 		{
 			"type": "Live Preview",
-			"workspacePath": "/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main",
+			"workspacePath": "${workspaceFolder}",
 			"problemMatcher": [],
 			"label": "Live Preview: Run Server"
 		},

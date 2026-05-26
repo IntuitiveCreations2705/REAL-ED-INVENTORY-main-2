@@ -10,15 +10,25 @@
 
 set -euo pipefail
 
-REPO_ROOT="/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main"
+# Source environment configuration; default to SSD if not set
+REPO_ROOT="${INVENTORY_RUNTIME_ROOT:-/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main}"
+
+# Validate runtime root is mounted and accessible
+if [[ ! -d "$REPO_ROOT" ]]; then
+    echo "[ERROR] INVENTORY_RUNTIME_ROOT not accessible: $REPO_ROOT" >&2
+    echo "[ERROR] Failover: export INVENTORY_RUNTIME_ROOT=/Volumes/LANIA/... and retry" >&2
+    exit 1
+fi
+
 MAIN2_DIR="${REPO_ROOT}/REAL-ED-INVENTORY-main-2"
-LANIA_MAIN2="/Volumes/LANIA/REAL-ED-MAIN2-BACKUPS"
-LANIA_SNAPSHOTS="/Volumes/LANIA/REAL-ED-DR/main2_snapshots"
+LANIA_BACKUP_BASE="${INVENTORY_BACKUP_SECONDARY:-/Volumes/LANIA}"
+LANIA_MAIN2="$LANIA_BACKUP_BASE/REAL-ED-MAIN2-BACKUPS"
+LANIA_SNAPSHOTS="$LANIA_BACKUP_BASE/REAL-ED-DR/main2_snapshots"
 FORCE_FULL=${1:-}
 
-# Ensure LANIA is accessible
-if [[ ! -d "/Volumes/LANIA" ]]; then
-    echo "[ERROR] LANIA drive not mounted" >&2
+# Ensure backup secondary is accessible
+if [[ ! -d "$LANIA_BACKUP_BASE" ]]; then
+    echo "[ERROR] INVENTORY_BACKUP_SECONDARY not mounted: $LANIA_BACKUP_BASE" >&2
     exit 1
 fi
 

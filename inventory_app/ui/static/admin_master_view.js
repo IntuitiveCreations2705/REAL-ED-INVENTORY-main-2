@@ -709,6 +709,8 @@ function renderRows() {
     return;
   }
 
+  const rowsFragment = document.createDocumentFragment();
+
   for (const row of state.filteredRows) {
     const tr = els.rowTemplate.content.firstElementChild.cloneNode(true);
     tr.dataset.rowId = row.row_id;
@@ -1079,8 +1081,10 @@ function renderRows() {
       renderRows();
     });
 
-    els.body.appendChild(tr);
+    rowsFragment.appendChild(tr);
   }
+
+  els.body.appendChild(rowsFragment);
 
   if (shouldUseBoxAccordionMode()) {
     applyBoxAccordionMode();

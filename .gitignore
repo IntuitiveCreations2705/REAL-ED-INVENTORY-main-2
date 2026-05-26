@@ -1,6 +1,10 @@
 # Local accidental artifacts
 REAL-ED-INVENTORY-main-2/
 inventory_app/ui/static/git push --set-upstream origin main
+
+# macOS filesystem metadata noise
+.DS_Store
+._*
 # Sandbox databases (local, ephemeral test environments)
 sql_inventory_sb2.db
 sql_inventory_sb2.db-wal

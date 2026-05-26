@@ -8,7 +8,16 @@
 
 set -euo pipefail
 
-REPO_ROOT="/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main"
+# Source environment configuration; default to SSD if not set
+REPO_ROOT="${INVENTORY_RUNTIME_ROOT:-/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main}"
+
+# Validate runtime root is mounted and accessible
+if [[ ! -d "$REPO_ROOT" ]]; then
+    echo "[ERROR] INVENTORY_RUNTIME_ROOT not accessible: $REPO_ROOT" >&2
+    echo "[ERROR] Failover: export INVENTORY_RUNTIME_ROOT=/Volumes/LANIA/... and retry" >&2
+    exit 1
+fi
+
 INVENTORY_UI_DIR="$REPO_ROOT/inventory_app/ui"
 SCRIPTS_DIR="$REPO_ROOT/inventory_app/scripts"
 LOG_FILE="/var/log/sb3-rehearsal.log"
@@ -16,7 +25,7 @@ SB3_DB="$REPO_ROOT/sql_inventory_sb3.db"
 SB1_DB="$REPO_ROOT/sql_inventory_master.db"
 SB3_PORT=5052
 TIMEOUT_SECONDS=300
-LANIA_SB3_BACKUP="/Volumes/LANIA/REAL-ED-DR/sb3_backups"
+LANIA_SB3_BACKUP="${INVENTORY_SB3_BACKUP_LANIA:-/Volumes/LANIA/REAL-ED-DR/sb3_backups}"
 
 # Ensure log directory exists
 mkdir -p "$(dirname "$LOG_FILE")"
