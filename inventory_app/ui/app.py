@@ -64,6 +64,42 @@ CANONICAL_BOX_KEY_SQL = (
 )
 
 
+def _resolve_sandbox_identity(db_path: str, sandbox_label: str, port: str) -> dict[str, str]:
+    """Derive a stable sandbox identity for UI badge rendering.
+
+    Priority:
+    1) Explicit sandbox label (INVENTORY_SANDBOX_LABEL)
+    2) Known DB path markers
+    3) Known port mapping
+    """
+    db_norm = str(db_path or "").lower()
+    label_norm = str(sandbox_label or "").strip().lower()
+    port_norm = str(port or "").strip()
+
+    if "sb3" in label_norm or "application" in label_norm:
+        return {"code": "SB3", "title": "SB3 APPLICATION"}
+    if "sb2" in label_norm or "test" in label_norm:
+        return {"code": "SB2", "title": "SB2 TEST"}
+    if "sb1" in label_norm or "master" in label_norm:
+        return {"code": "SB1", "title": "SB1 MASTER"}
+
+    if "sb3" in db_norm:
+        return {"code": "SB3", "title": "SB3 APPLICATION"}
+    if "sb2" in db_norm:
+        return {"code": "SB2", "title": "SB2 TEST"}
+    if "sb1" in db_norm or "master" in db_norm:
+        return {"code": "SB1", "title": "SB1 MASTER"}
+
+    if port_norm == "5052":
+        return {"code": "SB3", "title": "SB3 APPLICATION"}
+    if port_norm == "5051":
+        return {"code": "SB2", "title": "SB2 TEST"}
+    if port_norm == "5050":
+        return {"code": "SB1", "title": "SB1 MASTER"}
+
+    return {"code": "UNK", "title": "Sandbox status unknown"}
+
+
 def api_error(
     message: str,
     status: int = 400,
@@ -559,6 +595,9 @@ def create_app() -> Flask:
     @app.get("/api/health")
     def health() -> Any:
         foundation = evaluate_foundation_policy("api.health")
+        configured_label = str(os.getenv("INVENTORY_SANDBOX_LABEL", "") or "").strip()
+        configured_port = str(os.getenv("INVENTORY_PORT", "") or "").strip()
+        resolved = _resolve_sandbox_identity(str(DB_PATH), configured_label, configured_port)
         with get_conn() as conn:
             counts = conn.execute(
                 """
@@ -593,6 +632,12 @@ def create_app() -> Flask:
         return jsonify(
             {
                 "db_path": str(DB_PATH),
+                "sandbox": {
+                    "code": resolved["code"],
+                    "title": resolved["title"],
+                    "configured_label": configured_label,
+                    "configured_port": configured_port,
+                },
                 "counts": dict(counts),
                 "foreign_key_violations": len(fk_rows),
                 "fk_violation_rows": violation_details,

@@ -1341,24 +1341,47 @@ async function checkHealth() {
   try {
     const res = await fetch('/api/health');
     const h = await res.json();
-    updateSandboxBadge(h.db_path);
+    updateSandboxBadge(h);
     if (h.foreign_key_violations > 0) {
       setStatus(`WARNING: FK violations = ${h.foreign_key_violations}`, true);
     }
   } catch (err) {
-    updateSandboxBadge('');
+    updateSandboxBadge(null);
   }
 }
 
-function updateSandboxBadge(dbPath) {
+function updateSandboxBadge(healthPayload) {
   if (!els.sandboxBadge) return;
 
+  const sandbox = healthPayload && typeof healthPayload === 'object'
+    ? (healthPayload.sandbox || null)
+    : null;
+
+  const explicitCode = String(sandbox?.code || '').trim().toUpperCase();
+  const explicitTitle = String(sandbox?.title || '').trim();
+
+  const dbPath = healthPayload && typeof healthPayload === 'object'
+    ? healthPayload.db_path
+    : '';
   const normalized = String(dbPath || '').toLowerCase();
+
   let label = 'UNK';
   let className = 'sandbox-badge--unknown';
   let title = 'Sandbox status unknown';
 
-  if (normalized.includes('sb3')) {
+  if (explicitCode === 'SB3') {
+    label = 'SB3';
+    className = 'sandbox-badge--sb3';
+    title = explicitTitle || 'SB3 APPLICATION';
+  } else if (explicitCode === 'SB2') {
+    label = 'SB2';
+    className = 'sandbox-badge--sb2';
+    title = explicitTitle || 'SB2 TEST';
+  } else if (explicitCode === 'SB1') {
+    label = 'SB1';
+    className = 'sandbox-badge--sb1';
+    title = explicitTitle || 'SB1 MASTER';
+  } else if (normalized.includes('sb3')) {
     label = 'SB3';
     className = 'sandbox-badge--sb3';
     title = 'SB3 APPLICATION';

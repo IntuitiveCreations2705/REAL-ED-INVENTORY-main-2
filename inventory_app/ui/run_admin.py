@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import os
+import socket
+import sys
 import threading
 import webbrowser
 
@@ -57,8 +59,27 @@ def _open_browser_later(url: str) -> None:
     timer.daemon = True
     timer.start()
 
+
+def _check_port_available(host: str, port: int) -> bool:
+    """Check if the port is already in use. Returns False if port is listening."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.5)
+            result = sock.connect_ex((host, port))
+            return result != 0  # 0 = connected (port in use), non-zero = not in use
+    except Exception:
+        return True  # Assume available on error
+
+
 if __name__ == "__main__":
     args = _build_parser().parse_args()
+    
+    # Guard: Check if port is already listening (prevents duplicate starts)
+    if not _check_port_available(args.host, args.port):
+        print(f"\n❌ ERROR: Port {args.port} is already in use.", file=sys.stderr)
+        print(f"   Possible duplicate startup detected. Exiting.", file=sys.stderr)
+        sys.exit(1)
+    
     label = f" [{args.label}]" if args.label else ""
     url = f"http://{args.host}:{args.port}"
 

@@ -22,6 +22,24 @@ Each script now sets all three things explicitly before starting the UI:
 - SB2 → `http://127.0.0.1:5051`
 - SB3 → `http://127.0.0.1:5052`
 
+## Shared UI baseline (all SBs)
+
+SB1/SB2/SB3 use the same UI codebase. The default body background standard is:
+
+- `rgb(15, 23, 42)` (`#0f172a`)
+
+So SB2 automatically inherits this standard from shared theme CSS.
+
+## Canonical label format
+
+Use space-separated labels in startup paths:
+
+- `SB1 MASTER`
+- `SB2 TEST`
+- `SB3 APPLICATION`
+
+Avoid underscore variants like `SB2_TEST` in launcher conventions.
+
 ## Zero-thought startup ritual
 
 From the project root:

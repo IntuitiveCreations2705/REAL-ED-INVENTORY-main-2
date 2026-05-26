@@ -1,5 +1,5 @@
 :root {
-  --bg: #0f172a;
+  --bg: rgb(15, 23, 42);
   --surface: #111b31;
   --surface-soft: #17233d;
   --text: #e8eefc;
@@ -98,6 +98,7 @@ body {
   min-height: 100vh;
   font-family: var(--font);
   font-size: 11pt;
+  background-color: rgb(15, 23, 42);
   background: var(--bg);
   color: var(--text);
 }
@@ -156,13 +157,10 @@ body {
 }
 
 .master-shell .sticky-tools {
-  position: sticky;
-  top: 0;
-  z-index: 40;
+  position: static;
   display: grid;
   gap: 10px;
   padding-top: 2px;
-  background: var(--bg);
 }
 
 .stock-count-shell .sticky-tools {
@@ -744,6 +742,13 @@ body {
   padding: 10px 12px;
 }
 
+.master-shell[data-sticky-target="case-rules"] .case-rules-panel {
+  position: sticky;
+  top: 8px;
+  z-index: 30;
+  align-self: start;
+}
+
 .box-filter-summary-card {
   padding: 10px 12px;
   display: grid;
@@ -1196,6 +1201,11 @@ td input[data-field="restock_comments"]:hover {
   z-index: 1;
 }
 
+.master-shell[data-sticky-target="table-head"] .table-wrap {
+  max-height: calc(100dvh - 320px);
+  overflow: auto;
+}
+
 .stock-count-shell .table-wrap {
   min-height: 0;
   overflow: auto;
@@ -1222,6 +1232,31 @@ thead th {
   text-transform: uppercase;
   padding: 8px 7px;
   border-bottom: 1px solid var(--border);
+}
+
+.master-shell[data-sticky-target="case-rules"] .table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.master-shell[data-sticky-target="table-head"] .case-rules-panel {
+  position: static;
+  top: auto;
+  z-index: auto;
+}
+
+.master-shell[data-sticky-target="table-head"] .table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.master-shell[data-sticky-target="none"] .case-rules-panel,
+.master-shell[data-sticky-target="none"] .table-wrap thead th {
+  position: static;
+  top: auto;
+  z-index: auto;
 }
 
 tbody td {
