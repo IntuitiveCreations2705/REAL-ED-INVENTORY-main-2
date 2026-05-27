@@ -8,8 +8,9 @@
 
 set -euo pipefail
 
-# Source environment configuration; default to SSD if not set
-REPO_ROOT="${INVENTORY_RUNTIME_ROOT:-/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main}"
+# Source environment configuration; default to 2000 MASTER GitHub hierarchy if not set
+GITHUB_ROOT="${INVENTORY_GITHUB_ROOT:-/Volumes/2000 MASTER/MASTER INVENTORY FOLDER/GITHUB REPOSITORY}"
+REPO_ROOT="${INVENTORY_RUNTIME_ROOT:-$GITHUB_ROOT/repo-main}"
 
 # Validate runtime root is mounted and accessible
 if [[ ! -d "$REPO_ROOT" ]]; then
@@ -20,7 +21,7 @@ fi
 
 INVENTORY_UI_DIR="$REPO_ROOT/inventory_app/ui"
 SCRIPTS_DIR="$REPO_ROOT/inventory_app/scripts"
-LOG_FILE="/var/log/sb3-rehearsal.log"
+LOG_FILE="${INVENTORY_SB3_REHEARSAL_LOG:-/var/log/sb3-rehearsal.log}"
 SB3_DB="$REPO_ROOT/sql_inventory_sb3.db"
 SB1_DB="$REPO_ROOT/sql_inventory_master.db"
 SB3_PORT=5052

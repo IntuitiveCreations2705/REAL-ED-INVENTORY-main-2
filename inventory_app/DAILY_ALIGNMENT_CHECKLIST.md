@@ -14,6 +14,19 @@ Owner: Admin/Product Ops
 
 ## Checklist
 
+- [ ] Pre-clone gate (mandatory before aligning to 2000 MASTER)
+  - Confirm mount and hierarchy exists:
+    - `/Volumes/2000 MASTER/MASTER INVENTORY FOLDER/GITHUB REPOSITORY/repo-main`
+    - `/Volumes/2000 MASTER/MASTER INVENTORY FOLDER/GITHUB REPOSITORY/repo-main-2`
+  - Confirm env contract is aligned:
+    - `INVENTORY_GITHUB_ROOT`
+    - `INVENTORY_RUNTIME_ROOT`
+    - `INVENTORY_MAIN2_DIR`
+    - `INVENTORY_BACKUP_SECONDARY`
+  - Run backup + verify + trial restore before clone alignment.
+  - Run DR validation and require pass before clone alignment.
+  - Record checkpoint tag as official pre-clone stage marker.
+
 - [ ] Normalize rendering (later phase)
   - Scope: shared rendering conventions across views (labels, badges, spacing, visibility, sort/group defaults).
   - Constraint: presentation-only; no data-rule or schema changes in this step.
@@ -86,6 +99,7 @@ Owner: Admin/Product Ops
 - Goal: zero unnoticed high-severity errors carried forward.
 
 Required promotion criteria:
+
 - [ ] Alignment check passed in test stage (rules + UX intent + operating model).
 - [ ] Drift check completed against baseline docs and current behavior.
 - [ ] Regression checks passed for critical workflows.
@@ -94,6 +108,7 @@ Required promotion criteria:
 - [ ] Final approver sign-off recorded with date and scope.
 
 Stop-ship conditions:
+
 - Any unresolved high-severity defect.
 - Rule conflict between documented policy and implemented behavior.
 - Missing sign-off for rule-impact or schema-impact changes.
@@ -101,5 +116,6 @@ Stop-ship conditions:
 ---
 
 ## Notes / Additions
+
 - Add new checklist items below this line during daily review.
 

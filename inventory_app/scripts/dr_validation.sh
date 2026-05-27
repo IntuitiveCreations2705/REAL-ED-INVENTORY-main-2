@@ -11,11 +11,13 @@
 
 set -euo pipefail
 
-REPO_ROOT="/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main"
-LANIA_DR="/Volumes/LANIA/REAL-ED-DR"
-LANIA_CLONES="/Volumes/LANIA/REAL-ED-COLD-CLONES"
-LANIA_SB3_BACKUP="/Volumes/LANIA/REAL-ED-DR/sb3_backups"
-LANIA_MAIN2="/Volumes/LANIA/REAL-ED-MAIN2-BACKUPS"
+GITHUB_ROOT="${INVENTORY_GITHUB_ROOT:-/Volumes/2000 MASTER/MASTER INVENTORY FOLDER/GITHUB REPOSITORY}"
+REPO_ROOT="${INVENTORY_RUNTIME_ROOT:-$GITHUB_ROOT/repo-main}"
+LANIA_DR="${INVENTORY_BACKUP_SECONDARY:-/Volumes/LANIA/REAL-ED-DR}"
+LANIA_CLONES="${INVENTORY_LANIA_CLONES:-/Volumes/LANIA/REAL-ED-COLD-CLONES}"
+LANIA_SB3_BACKUP="${INVENTORY_SB3_BACKUP_LANIA:-$LANIA_DR/sb3_backups}"
+LANIA_MAIN2="${INVENTORY_MAIN2_BACKUP_DIR:-$LANIA_DR/main2_backups}"
+MAIN2_DIR="${INVENTORY_MAIN2_DIR:-$GITHUB_ROOT/repo-main-2}"
 FULL_VALIDATION=${1:-}
 
 # Color output
@@ -256,7 +258,7 @@ echo "SECTION 5: REAL-ED-INVENTORY-main-2 Repository"
 echo "═══════════════════════════════════════════════════════════════════════════"
 
 check_main2() {
-    local main2_dir="${REPO_ROOT}/REAL-ED-INVENTORY-main-2"
+    local main2_dir="$MAIN2_DIR"
     echo ""
     
     if [[ -d "$main2_dir" ]]; then

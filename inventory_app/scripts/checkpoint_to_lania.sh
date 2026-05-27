@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Source environment configuration; default to SSD if not set
-ROOT="${INVENTORY_RUNTIME_ROOT:-/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main}"
+# Source environment configuration; default to 2000 MASTER GitHub hierarchy if not set
+GITHUB_ROOT="${INVENTORY_GITHUB_ROOT:-/Volumes/2000 MASTER/MASTER INVENTORY FOLDER/GITHUB REPOSITORY}"
+ROOT="${INVENTORY_RUNTIME_ROOT:-$GITHUB_ROOT/repo-main}"
 
 # Validate runtime root is mounted and accessible
 if [[ ! -d "$ROOT" ]]; then
@@ -11,8 +12,8 @@ if [[ ! -d "$ROOT" ]]; then
     exit 1
 fi
 
-LANIA_BACKUP_BASE="${INVENTORY_BACKUP_SECONDARY:-/Volumes/LANIA}"
-LANIA_REPO="$LANIA_BACKUP_BASE/REAL-ED-INVENTORY-main"
+LANIA_BACKUP_BASE="${INVENTORY_BACKUP_SECONDARY:-/Volumes/LANIA/REAL-ED-DR}"
+LANIA_REPO="${INVENTORY_LANIA_MAIN_REPO:-/Volumes/LANIA/REAL-ED-INVENTORY-main}"
 
 DB_PATH="${INVENTORY_DB_PATH:-$ROOT/sql_inventory_master.db}"
 SNAP_DIR="$ROOT/inventory_app/backups/db_snapshots"

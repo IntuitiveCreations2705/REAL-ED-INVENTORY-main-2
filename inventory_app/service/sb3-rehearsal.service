@@ -4,11 +4,13 @@ After=network.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main
-ExecStart=/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main/inventory_app/scripts/sb3_nightly_rehearsal.sh
+WorkingDirectory=/Volumes/2000 MASTER/MASTER INVENTORY FOLDER/GITHUB REPOSITORY/repo-main
+ExecStart=/Volumes/2000 MASTER/MASTER INVENTORY FOLDER/GITHUB REPOSITORY/repo-main/inventory_app/scripts/sb3_nightly_rehearsal.sh
 # Environment variables for runtime failover: override defaults in .env or systemd environment
-Environment="INVENTORY_RUNTIME_ROOT=/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main"
-Environment="INVENTORY_BACKUP_SECONDARY=/Volumes/LANIA"
+Environment="INVENTORY_GITHUB_ROOT=/Volumes/2000 MASTER/MASTER INVENTORY FOLDER/GITHUB REPOSITORY"
+Environment="INVENTORY_RUNTIME_ROOT=/Volumes/2000 MASTER/MASTER INVENTORY FOLDER/GITHUB REPOSITORY/repo-main"
+Environment="INVENTORY_MAIN2_DIR=/Volumes/2000 MASTER/MASTER INVENTORY FOLDER/GITHUB REPOSITORY/repo-main-2"
+Environment="INVENTORY_BACKUP_SECONDARY=/Volumes/LANIA/REAL-ED-DR"
 Environment="INVENTORY_SB3_BACKUP_LANIA=/Volumes/LANIA/REAL-ED-DR/sb3_backups"
 User=%i
 Group=staff

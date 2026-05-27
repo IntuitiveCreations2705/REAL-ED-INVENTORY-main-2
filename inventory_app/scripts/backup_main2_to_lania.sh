@@ -10,8 +10,9 @@
 
 set -euo pipefail
 
-# Source environment configuration; default to SSD if not set
-REPO_ROOT="${INVENTORY_RUNTIME_ROOT:-/Volumes/2000 MASTER/REAL-ED-INVENTORY-main/REAL-ED-INVENTORY-main}"
+# Source environment configuration; default to 2000 MASTER GitHub hierarchy if not set
+GITHUB_ROOT="${INVENTORY_GITHUB_ROOT:-/Volumes/2000 MASTER/MASTER INVENTORY FOLDER/GITHUB REPOSITORY}"
+REPO_ROOT="${INVENTORY_RUNTIME_ROOT:-$GITHUB_ROOT/repo-main}"
 
 # Validate runtime root is mounted and accessible
 if [[ ! -d "$REPO_ROOT" ]]; then
@@ -20,10 +21,10 @@ if [[ ! -d "$REPO_ROOT" ]]; then
     exit 1
 fi
 
-MAIN2_DIR="${REPO_ROOT}/REAL-ED-INVENTORY-main-2"
-LANIA_BACKUP_BASE="${INVENTORY_BACKUP_SECONDARY:-/Volumes/LANIA}"
-LANIA_MAIN2="$LANIA_BACKUP_BASE/REAL-ED-MAIN2-BACKUPS"
-LANIA_SNAPSHOTS="$LANIA_BACKUP_BASE/REAL-ED-DR/main2_snapshots"
+MAIN2_DIR="${INVENTORY_MAIN2_DIR:-$GITHUB_ROOT/repo-main-2}"
+LANIA_BACKUP_BASE="${INVENTORY_BACKUP_SECONDARY:-/Volumes/LANIA/REAL-ED-DR}"
+LANIA_MAIN2="${INVENTORY_MAIN2_BACKUP_DIR:-$LANIA_BACKUP_BASE/main2_backups}"
+LANIA_SNAPSHOTS="${INVENTORY_MAIN2_SNAPSHOTS_DIR:-$LANIA_BACKUP_BASE/main2_snapshots}"
 FORCE_FULL=${1:-}
 
 # Ensure backup secondary is accessible
