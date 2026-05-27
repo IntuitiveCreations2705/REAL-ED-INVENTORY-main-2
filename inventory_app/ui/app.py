@@ -24,6 +24,7 @@ from rules import (
     parse_pipe_tags,
     validate_event_tags_against_catalog,
 )
+from sync_ops import create_scheduler
 from system_map_assets import SOURCE_FILE, ensure_system_map_assets
 
 EDITABLE_FIELDS = {
@@ -568,6 +569,14 @@ def create_app() -> Flask:
         _ensure_event_name_theme_column(cleanup_conn)
         _ensure_ui_rule_settings_table(cleanup_conn)
         _ensure_activity_tracking_tables(cleanup_conn)
+
+    # Initialize git sync scheduler with config from environment
+    runtime_root = os.getenv(
+        "INVENTORY_RUNTIME_ROOT",
+        "/Volumes/2000 MASTER/MASTER INVENTORY FOLDER/GITHUB REPOSITORY/repo-main",
+    )
+    sync_scheduler = create_scheduler(runtime_root)
+    app.config["SYNC_SCHEDULER"] = sync_scheduler
 
     # Ensure generated visual map assets exist for UX/backend introspection.
     system_map_boot_error: str | None = None
@@ -2449,5 +2458,78 @@ def create_app() -> Flask:
                 "row_count": len(rollup),
             }
         )
+
+    # ──────────────────────────────────────────────────────────────
+    # Sync API Endpoints (Phase 1)
+    # ──────────────────────────────────────────────────────────────
+
+    @app.get("/api/sync/status")
+    def sync_status() -> Any:
+        """Get current git sync state for UI status badge."""
+        scheduler = app.config.get("SYNC_SCHEDULER")
+        if not scheduler:
+            return jsonify({"error": "sync scheduler not initialized"}), 500
+        state = scheduler.get_state()
+        return jsonify(state.to_dict())
+
+    @app.post("/api/sync/pull")
+    def sync_pull() -> Any:
+        """Manual git pull with delay respect and conflict detection."""
+        scheduler = app.config.get("SYNC_SCHEDULER")
+        if not scheduler:
+            return jsonify({"error": "sync scheduler not initialized"}), 500
+
+        payload = request.get_json() or {}
+        force_now_bypass = payload.get("force_now_bypass", False)
+        respect_conflict_check = payload.get("respect_conflict_check", True)
+        user_id = payload.get("user_id", "system")
+
+        result = scheduler.pull(
+            force_now_bypass=force_now_bypass,
+            respect_conflict_check=respect_conflict_check,
+            user_id=user_id,
+        )
+
+        # Determine status code
+        if result["status"] == "success":
+            status_code = 200
+        elif result["status"] == "delayed":
+            status_code = 202
+        elif result["status"] == "conflict":
+            status_code = 409
+        elif result["status"] == "queued":
+            status_code = 400
+        else:  # error
+            status_code = 500
+
+        return jsonify(result), status_code
+
+    @app.post("/api/sync/push")
+    def sync_push() -> Any:
+        """Explicit git push with delay respect."""
+        scheduler = app.config.get("SYNC_SCHEDULER")
+        if not scheduler:
+            return jsonify({"error": "sync scheduler not initialized"}), 500
+
+        payload = request.get_json() or {}
+        force_now_bypass = payload.get("force_now_bypass", False)
+        user_id = payload.get("user_id", "system")
+
+        result = scheduler.push(
+            force_now_bypass=force_now_bypass,
+            user_id=user_id,
+        )
+
+        # Determine status code
+        if result["status"] == "success":
+            status_code = 200
+        elif result["status"] == "delayed":
+            status_code = 202
+        elif result["status"] == "queued":
+            status_code = 400
+        else:  # error
+            status_code = 500
+
+        return jsonify(result), status_code
 
     return app
